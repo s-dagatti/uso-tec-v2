@@ -14,7 +14,7 @@ st.set_page_config(
 # --- CONFIGURACIÓN DE ARCHIVO EN GITHUB ---
 NOMBRE_ARCHIVO_GITHUB = "data/base_datos_consolidada.xlsx"
 
-# --- FUNCIÓN DE LECTURA DESDE GITHUB (CON CACHÉ) ---
+# --- FUNCIÓN DE LECTURA DESDES GITHUB (CON CACHÉ) ---
 @st.cache_data(ttl=300)
 def cargar_datos_github():
     try:
@@ -57,7 +57,7 @@ with st.spinner("Cargando la base de datos desde GitHub..."):
 
 if df is not None and not df.empty:
     
-    # 1. PREPROCESAMIENTO DE FECHAS
+    # 1. PREPROCESAMIENTO DE FECHAS DE PERÍODO (Para filtros)
     if 'Fecha Fin' in df.columns:
         df['Fecha_Fin_DT'] = pd.to_datetime(df['Fecha Fin'], errors='coerce')
     else:
@@ -84,6 +84,11 @@ if df is not None and not df.empty:
         max_date_global = datetime.date.today()
         default_inicio = min_date_global
         ultimo_fin = max_date_global
+
+    # --- DETECCIÓN DE COLUMNAS U Y V PARA FECHAS DE LICENCIA POR ÍNDICE ---
+    # U = Índice 20 (columna 21), V = Índice 21 (columna 22)
+    col_u_lic_inicio = df.columns[20] if len(df.columns) > 20 else None
+    col_v_lic_fin = df.columns[21] if len(df.columns) > 21 else None
 
     # --- DETECCIÓN DE NOMBRES DE COLUMNAS PARA FILTROS ---
     col_familia = 'Product Family' if 'Product Family' in df.columns else ('Familia de Producto' if 'Familia de Producto' in df.columns else None)
@@ -234,16 +239,22 @@ if df is not None and not df.empty:
         else:
             df_display = df_filtered.copy()
 
-        # --- IDENTIFICAR COLUMNAS CLAVE DE HARDWARE Y LICENCIAS ---
+        # --- IDENTIFICAR COLUMNA HARDWARE Y NOMBRE DE LICENCIA ---
         col_hardware = next((c for c in df_display.columns if 'hardware' in c.lower()), None)
         col_lic_nombre = next((c for c in df_display.columns if 'nombre' in c.lower() and 'licencia' in c.lower()), 
                               next((c for c in df_display.columns if 'licencia' in c.lower() or 'license' in c.lower()), None))
-        col_f_inicio = next((c for c in df_display.columns if 'inicio' in c.lower() and c not in ['Fecha_Inicio_DT']), 'Fecha Inicio')
-        col_f_term = next((c for c in df_display.columns if 'termin' in c.lower() or 'fin' in c.lower() or 'vencim' in c.lower()), 'Fecha de Terminación')
 
-        # --- EVALUACIÓN DE LICENCIA G5 REGISTRO POR REGISTRO ---
+        # --- EVALUACIÓN DE LICENCIA G5 USANDO COLUMNAS U Y V DIRECTAS ---
         def evaluar_licencia_autotrac(row):
             hw = str(row[col_hardware]).strip() if col_hardware and pd.notna(row[col_hardware]) else ""
+            
+            # Formatear la fecha eliminando hora si existiera
+            def fmt_fecha(val):
+                if pd.isna(val) or str(val).strip() in ["", "nan", "NaT", "None"]:
+                    return "-"
+                val_str = str(val).split('T')[0].split(' ')[0]
+                return val_str
+
             if hw.upper().startswith("G5"):
                 lic_nombre = str(row[col_lic_nombre]).strip() if col_lic_nombre and pd.notna(row[col_lic_nombre]) else ""
                 
@@ -254,8 +265,9 @@ if df is not None and not df.empty:
                 else:
                     lic_info = "Sin Licencia AutoTrac"
                 
-                f_ini = str(row[col_f_inicio]).split('T')[0].split(' ')[0] if col_f_inicio in row and pd.notna(row[col_f_inicio]) else "-"
-                f_fin = str(row[col_f_term]).split('T')[0].split(' ')[0] if col_f_term in row and pd.notna(row[col_f_term]) else "-"
+                # Obtener exactamente de U (índice 20) y V (índice 21)
+                f_ini = fmt_fecha(row[col_u_lic_inicio]) if col_u_lic_inicio and col_u_lic_inicio in row else "-"
+                f_fin = fmt_fecha(row[col_v_lic_fin]) if col_v_lic_fin and col_v_lic_fin in row else "-"
                 
                 return pd.Series([hw, lic_info, f_ini, f_fin])
             else:
@@ -265,12 +277,12 @@ if df is not None and not df.empty:
         # Aplicar la lógica si la base no está vacía
         if not df_display.empty:
             res_lic = df_display.apply(evaluar_licencia_autotrac, axis=1)
-            res_lic.columns = ['Hardware Monitor', 'Licencia AutoTrac', 'Fecha Inicio Licencia', 'Fecha Terminación Licencia']
+            res_lic.columns = ['Hardware Monitor', 'Licencia AutoTrac', 'Fecha Inicio Licencia', 'Fecha Fin Licencia']
             
             df_display['Hardware Monitor'] = res_lic['Hardware Monitor']
             df_display['Licencia AutoTrac'] = res_lic['Licencia AutoTrac']
             df_display['Fecha Inicio Licencia'] = res_lic['Fecha Inicio Licencia']
-            df_display['Fecha Terminación Licencia'] = res_lic['Fecha Terminación Licencia']
+            df_display['Fecha Fin Licencia'] = res_lic['Fecha Fin Licencia']
 
             # Convertir AutoTrac a flotante * 100
             df_display['AutoTrac_Num'] = pd.to_numeric(
@@ -279,7 +291,7 @@ if df is not None and not df.empty:
             ) * 100
 
             # --- AGRUPACIÓN POR NÚMERO DE SERIE DE MÁQUINA (Machine Pin) ---
-            cols_grupo = ['Sucursal', 'Org Name', 'Product Family', 'Machine Pin', 'Hardware Monitor', 'Licencia AutoTrac', 'Fecha Inicio Licencia', 'Fecha Terminación Licencia']
+            cols_grupo = ['Sucursal', 'Org Name', 'Product Family', 'Machine Pin', 'Hardware Monitor', 'Licencia AutoTrac', 'Fecha Inicio Licencia', 'Fecha Fin Licencia']
             cols_grupo_existentes = [c for c in cols_grupo if c in df_display.columns]
 
             # Agrupar por Machine Pin y metadatos, calculando el promedio del % de AutoTrac
@@ -291,10 +303,24 @@ if df is not None and not df.empty:
             df_grouped['% Uso AutoTrac'] = df_grouped['AutoTrac_Num'].apply(
                 lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A"
             )
-            df_grouped = df_grouped.drop(columns=['AutoTrac_Num'], errors='ignore')
 
-            st.dataframe(df_grouped, use_container_width=True)
-            st.caption(f"Mostrando {len(df_grouped)} equipos únicos agrupados por N° de Serie (Machine Pin).")
+            # --- FUNCIÓN DE ESTILO: DESTACAR EN ROJO SI < 60% ---
+            def resaltar_bajo_uso(val):
+                try:
+                    if pd.notna(val) and val < 60.0:
+                        return 'background-color: #ffcdd2; color: #b71c1c; font-weight: bold;'
+                except:
+                    pass
+                return ''
+
+            # Aplicar estilo al DataFrame utilizando la columna numérica
+            st_styled = df_grouped.drop(columns=['AutoTrac_Num']).style.apply(
+                lambda s: [resaltar_bajo_uso(v) for v in df_grouped['AutoTrac_Num']],
+                subset=['% Uso AutoTrac']
+            )
+
+            st.dataframe(st_styled, use_container_width=True)
+            st.caption(f"Mostrando {len(df_grouped)} equipos únicos. 🔴 En rojo se resaltan los usos de AutoTrac inferiores al 60%.")
         else:
             st.info("No hay datos que coincidan con los filtros seleccionados.")
 
