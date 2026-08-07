@@ -13,9 +13,14 @@ st.set_page_config(
 st.title("🚜 Depurador y Consolidador de Maquinarias & Tecnología")
 st.markdown("""
 Esta herramienta procesa el reporte de maquinarias, consolida los registros, 
-y cruza los datos con el archivo de **Emparejamientos** para recuperar pantallas faltantes 
-y vincular el Número de Serie exacto de cada monitor.
+cruza los datos con el archivo de **Emparejamientos** y requiere **completar manualmente** 
+los equipos que registraron uso de tecnología pero no tienen identificador.
 """)
+
+# --- INICIALIZAR VARIABLES EN SESIÓN ---
+# Esto es vital para que al editar la tabla manualmente, Streamlit no reinicie el proceso
+if 'df_procesado' not in st.session_state:
+    st.session_state['df_procesado'] = None
 
 # --- SECCIÓN DE PARÁMETROS Y CARGA ---
 st.sidebar.header("📅 Período de Análisis")
@@ -27,10 +32,11 @@ uploaded_file_principal = st.sidebar.file_uploader("1. Machine Report Tech (.xls
 uploaded_file_emparejamientos = st.sidebar.file_uploader("2. Archivo Emparejamientos (.xlsx)", type=["xlsx"])
 
 if uploaded_file_principal is not None:
-    # Leer el Excel principal
-    df_raw = pd.read_excel(uploaded_file_principal)
-    
-    if st.button("🚀 Procesar, Limpiar y Emparejar Base de Datos", type="primary"):
+    # Botón para iniciar el procesamiento en la barra lateral
+    if st.sidebar.button("🚀 Procesar, Limpiar y Emparejar", type="primary"):
+        # Leer el Excel principal
+        df_raw = pd.read_excel(uploaded_file_principal)
+        
         # PASO 1: Eliminar filas completamente vacías en las 3 variables clave
         mask_empty = (
             df_raw['Machine Pin'].isna() & 
@@ -74,82 +80,121 @@ if uploaded_file_principal is not None:
             df_cleaned['Fecha Fin'] = fecha_fin.strftime('%Y-%m-%d')
             
         # PASO 4: EMPAREJAMIENTO DE MONITORES
+        if 'Latest Display Software Version' in df_cleaned.columns:
+            idx_software = df_cleaned.columns.get_loc('Latest Display Software Version')
+            df_cleaned.insert(idx_software + 1, 'Número de Serie Monitor', pd.NA)
+        else:
+            df_cleaned['Número de Serie Monitor'] = pd.NA
+
         if uploaded_file_emparejamientos is not None:
             try:
-                # Leer hoja 'Emparejamientos'
                 df_emp_raw = pd.read_excel(uploaded_file_emparejamientos, sheet_name='Emparejamientos')
-                
-                # Filtrar solo Monitores y limpiar strings para el cruce
                 df_monitores = df_emp_raw[df_emp_raw['Tipo'] == 'Monitor'].copy()
                 df_monitores['Machine_Pin_emp'] = df_monitores['Número de serie de emparejamiento'].astype(str).str.strip()
                 df_monitores['Modelo'] = df_monitores['Modelo'].astype(str).str.strip()
                 
-                # Crear la nueva columna justo después de "Latest Display Software Version"
-                if 'Latest Display Software Version' in df_cleaned.columns:
-                    idx_software = df_cleaned.columns.get_loc('Latest Display Software Version')
-                    df_cleaned.insert(idx_software + 1, 'Número de Serie Monitor', pd.NA)
-                else:
-                    df_cleaned['Número de Serie Monitor'] = pd.NA
-                    
-                # Lógica de cruce fila por fila
                 def match_monitor(row):
                     pin = str(row['Machine Pin']).strip()
                     hw = str(row['Latest Display Hardware Type']).strip() if pd.notna(row['Latest Display Hardware Type']) else None
                     
-                    # Buscar los monitores asociados a este PIN
                     machine_monitors = df_monitores[df_monitores['Machine_Pin_emp'] == pin]
-                    
                     if machine_monitors.empty:
                         return row
                         
-                    # Si no tiene monitor asignado en la base principal, usamos el del emparejamiento
                     if hw is None or hw == 'nan' or hw == '':
                         first_mon = machine_monitors.iloc[0]
                         row['Latest Display Hardware Type'] = first_mon['Modelo']
                         row['Latest Display Software Version'] = first_mon['Versión de software']
                         row['Número de Serie Monitor'] = first_mon['Número de serie']
                     else:
-                        # Si ya tiene un monitor, tratamos de cruzar PIN + Modelo para extraer el número de serie exacto
                         match_hw = machine_monitors[machine_monitors['Modelo'] == hw]
                         if not match_hw.empty:
                             row['Número de Serie Monitor'] = match_hw.iloc[0]['Número de serie']
                         else:
-                            # Fallback: asignamos el primer número de serie que aparece para esa máquina
                             row['Número de Serie Monitor'] = machine_monitors.iloc[0]['Número de serie']
-                            
                     return row
 
                 df_cleaned = df_cleaned.apply(match_monitor, axis=1)
-                st.success("¡Base de datos procesada, fechas asignadas y monitores emparejados exitosamente!")
-                
             except Exception as e:
-                st.warning(f"Se procesó la base principal, pero hubo un error con el archivo de emparejamientos: {e}")
-        else:
-            st.info("La base principal se procesó, pero no se cargó archivo de emparejamientos para cruzar monitores.")
+                st.sidebar.warning(f"Error procesando emparejamientos: {e}")
         
-        # Métricas resultantes
-        st.subheader("📈 Resultado Final")
-        r1, r2, r3, r4 = st.columns(4)
-        r1.metric("Filas consolidadas", len(df_cleaned))
-        if 'Número de Serie Monitor' in df_cleaned.columns:
-            monitores_rescatados = df_cleaned['Número de Serie Monitor'].notna().sum()
-            r2.metric("N° de Serie de Monitores recuperados", int(monitores_rescatados))
-        r3.metric("Machine Pins finales", int(df_cleaned['Machine Pin'].notna().sum()))
-        r4.metric("% Cobertura PIN", f"{(df_cleaned['Machine Pin'].notna().mean()*100):.1f}%")
+        # Guardar en memoria de sesión
+        st.session_state['df_procesado'] = df_cleaned
+
+
+# --- INTERFAZ POST-PROCESAMIENTO ---
+if st.session_state['df_procesado'] is not None:
+    df_base = st.session_state['df_procesado'].copy()
+    
+    # Identificar columnas de tecnología 
+    tecnologias = ['AutoTrac', 'RowSense', 'AIG', 'ATIG', 'ATTA', 'AutoPath', 'Machine Sync Leader']
+    tech_cols = [col for col in tecnologias if col in df_base.columns]
+    
+    # PASO 5: FILTRAR FILAS PARA EDICIÓN MANUAL
+    # Chequeamos si alguna tecnología tiene datos (excluyendo campos nulos de la fórmula)
+    has_tech_data = df_base[tech_cols].notna().any(axis=1)
+    # Condición: Falta PIN y Falta Serie del Monitor y Tiene datos de tecnología
+    mask_manual = df_base['Machine Pin'].isna() & df_base['Número de Serie Monitor'].isna() & has_tech_data
+    
+    if mask_manual.any():
+        st.warning("⚠️ **Atención:** Se encontraron registros que reportan uso de tecnología pero no tienen asignado ni **Machine Pin** ni **Número de Serie Monitor**. Es obligatorio completarlos.")
         
-        # Vista de resultados
-        st.subheader("📋 Base de Datos Resultante")
-        st.dataframe(df_cleaned, use_container_width=True)
+        # Separar las bases
+        df_ok = df_base[~mask_manual]
+        df_manual = df_base[mask_manual]
         
-        # Generar descarga Excel
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_cleaned.to_excel(writer, index=False, sheet_name='Base_Limpia')
-        excel_data = output.getvalue()
+        st.markdown("### ✏️ Edición Manual Obligatoria")
+        st.markdown("Por favor, haz **doble clic en las celdas vacías** de la tabla para completar `Machine Pin` y/o `Número de Serie Monitor`. Al terminar de escribir, la base final se actualizará abajo automáticamente.")
         
-        st.download_button(
-            label="📥 Descargar Base Depurada Final (.xlsx)",
-            data=excel_data,
-            file_name=f"CONCI_Machine_Report_Tech_{fecha_inicio}_{fecha_fin}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        # Bloquear edición en el resto de las columnas para evitar errores
+        column_config = {
+            col: st.column_config.Column(disabled=True) for col in df_manual.columns if col not in ['Machine Pin', 'Número de Serie Monitor']
+        }
+        
+        # Mostrar el editor interactivo
+        edited_manual = st.data_editor(
+            df_manual,
+            column_config=column_config,
+            use_container_width=True,
+            key="editor_manual"
         )
+        
+        # Unir las bases de nuevo con los datos editados
+        df_final = pd.concat([df_ok, edited_manual], ignore_index=True)
+        
+        # Validación: Chequear si todavía quedan filas de estas sin completar
+        aún_vacios = edited_manual['Machine Pin'].isna() & edited_manual['Número de Serie Monitor'].isna()
+        if aún_vacios.any():
+            st.error("❌ Aún hay registros de la tabla superior sin identificar. Sigue editando las celdas.")
+        else:
+            st.success("✅ Todos los campos obligatorios detectados fueron completados.")
+            
+    else:
+        st.success("¡Base de datos procesada exitosamente! No se detectaron registros con tecnología sin identificar.")
+        df_final = df_base
+        
+    # --- MÉTRICAS Y DESCARGA ---
+    st.subheader("📈 Resultado Final")
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("Filas consolidadas", len(df_final))
+    if 'Número de Serie Monitor' in df_final.columns:
+        monitores_rescatados = df_final['Número de Serie Monitor'].notna().sum()
+        r2.metric("Monitores con N° de Serie", int(monitores_rescatados))
+    r3.metric("Machine Pins Finales", int(df_final['Machine Pin'].notna().sum()))
+    r4.metric("% Cobertura PIN", f"{(df_final['Machine Pin'].notna().mean()*100):.1f}%")
+    
+    st.subheader("📋 Base de Datos Resultante")
+    st.dataframe(df_final, use_container_width=True)
+    
+    # Preparar el archivo de descarga
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_final.to_excel(writer, index=False, sheet_name='Base_Limpia')
+    excel_data = output.getvalue()
+    
+    st.download_button(
+        label="📥 Descargar Base Depurada Final (.xlsx)",
+        data=excel_data,
+        file_name=f"CONCI_Machine_Report_Tech_{fecha_inicio}_{fecha_fin}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
