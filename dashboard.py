@@ -220,8 +220,8 @@ if df is not None and not df.empty:
 
         st.markdown("---")
 
-        # --- TABLA DEL FINAL CON BUSCADOR Y AGRUPACIÓN ---
-        st.subheader("🔍 Tabla Resumen por Equipo")
+        # --- TABLA DEL FINAL CON BUSCADOR, LICENCIAS G5 Y AGRUPACIÓN ---
+        st.subheader("🔍 Tabla Resumen por Equipo y Estado de Licencia AutoTrac")
         
         busqueda = st.text_input("🔎 Buscar por Machine Pin u Org Name:", "")
         
@@ -234,60 +234,69 @@ if df is not None and not df.empty:
         else:
             df_display = df_filtered.copy()
 
-        # --- DEFINIR COLUMNAS A EXCLUIR ---
-        ignorar_exactos = [
-            'dealer', 'fecha de inicio', 'fecha de fin', 'numero de serie del monitor',
-            'número de serie monitor', 'fecha_fin_dt', 'fecha_inicio_dt', 'autotrac_num'
-        ]
-        
-        cols_a_mostrar = []
-        for c in df_display.columns:
-            c_lower = c.lower().strip()
-            if c_lower in ignorar_exactos:
-                continue
-            if 'display software' in c_lower:
-                continue
-            cols_a_mostrar.append(c)
+        # --- IDENTIFICAR COLUMNAS CLAVE DE HARDWARE Y LICENCIAS ---
+        col_hardware = next((c for c in df_display.columns if 'hardware' in c.lower()), None)
+        col_lic_nombre = next((c for c in df_display.columns if 'nombre' in c.lower() and 'licencia' in c.lower()), 
+                              next((c for c in df_display.columns if 'licencia' in c.lower() or 'license' in c.lower()), None))
+        col_f_inicio = next((c for c in df_display.columns if 'inicio' in c.lower() and c not in ['Fecha_Inicio_DT']), 'Fecha Inicio')
+        col_f_term = next((c for c in df_display.columns if 'termin' in c.lower() or 'fin' in c.lower() or 'vencim' in c.lower()), 'Fecha de Terminación')
 
-        # Cortar hasta 'AutoTrac' si existe
-        if 'AutoTrac' in cols_a_mostrar:
-            idx_autotrac = cols_a_mostrar.index('AutoTrac')
-            cols_a_mostrar = cols_a_mostrar[:idx_autotrac + 1]
+        # --- EVALUACIÓN DE LICENCIA G5 REGISTRO POR REGISTRO ---
+        def evaluar_licencia_autotrac(row):
+            hw = str(row[col_hardware]).strip() if col_hardware and pd.notna(row[col_hardware]) else ""
+            if hw.upper().startswith("G5"):
+                lic_nombre = str(row[col_lic_nombre]).strip() if col_lic_nombre and pd.notna(row[col_lic_nombre]) else ""
+                
+                if lic_nombre.lower().startswith("autotrac"):
+                    lic_info = lic_nombre
+                elif lic_nombre:
+                    lic_info = f"Otra: {lic_nombre}"
+                else:
+                    lic_info = "Sin Licencia AutoTrac"
+                
+                f_ini = str(row[col_f_inicio]).split('T')[0].split(' ')[0] if col_f_inicio in row and pd.notna(row[col_f_inicio]) else "-"
+                f_fin = str(row[col_f_term]).split('T')[0].split(' ')[0] if col_f_term in row and pd.notna(row[col_f_term]) else "-"
+                
+                return pd.Series([hw, lic_info, f_ini, f_fin])
+            else:
+                hw_val = hw if hw else "Desconocido"
+                return pd.Series([hw_val, "De base", "-", "-"])
 
-        if 'Sucursal' in df_display.columns and 'Sucursal' not in cols_a_mostrar:
-            cols_a_mostrar.insert(0, 'Sucursal')
+        # Aplicar la lógica si la base no está vacía
+        if not df_display.empty:
+            res_lic = df_display.apply(evaluar_licencia_autotrac, axis=1)
+            res_lic.columns = ['Hardware Monitor', 'Licencia AutoTrac', 'Fecha Inicio Licencia', 'Fecha Terminación Licencia']
+            
+            df_display['Hardware Monitor'] = res_lic['Hardware Monitor']
+            df_display['Licencia AutoTrac'] = res_lic['Licencia AutoTrac']
+            df_display['Fecha Inicio Licencia'] = res_lic['Fecha Inicio Licencia']
+            df_display['Fecha Terminación Licencia'] = res_lic['Fecha Terminación Licencia']
 
-        # --- AGRUPACIÓN POR NÚMERO DE SERIE DE MÁQUINA (Machine Pin) ---
-        if 'Machine Pin' in df_display.columns and not df_display.empty:
-            # Crear columna numérica para promediar correctamente
+            # Convertir AutoTrac a flotante * 100
             df_display['AutoTrac_Num'] = pd.to_numeric(
                 df_display['AutoTrac'].astype(str).str.replace('%', '').str.replace(',', '.'), 
                 errors='coerce'
             ) * 100
 
-            # Columnas de metadatos (Sucursal, Org Name, Product Family, etc.)
-            cols_meta = [c for c in cols_a_mostrar if c not in ['Machine Pin', 'AutoTrac']]
-            
-            # Diccionario de agregación (toma el primer valor para metadatos y promedia AutoTrac)
-            agg_dict = {c: 'first' for c in cols_meta if c in df_display.columns}
-            agg_dict['AutoTrac_Num'] = 'mean'
+            # --- AGRUPACIÓN POR NÚMERO DE SERIE DE MÁQUINA (Machine Pin) ---
+            cols_grupo = ['Sucursal', 'Org Name', 'Product Family', 'Machine Pin', 'Hardware Monitor', 'Licencia AutoTrac', 'Fecha Inicio Licencia', 'Fecha Terminación Licencia']
+            cols_grupo_existentes = [c for c in cols_grupo if c in df_display.columns]
 
-            df_grouped = df_display.groupby('Machine Pin', as_index=False, dropna=False).agg(agg_dict)
+            # Agrupar por Machine Pin y metadatos, calculando el promedio del % de AutoTrac
+            df_grouped = df_display.groupby(cols_grupo_existentes, as_index=False, dropna=False).agg({
+                'AutoTrac_Num': 'mean'
+            })
 
-            # Formatear el promedio de AutoTrac con %
-            df_grouped['AutoTrac'] = df_grouped['AutoTrac_Num'].apply(
+            # Formatear la columna de porcentaje
+            df_grouped['% Uso AutoTrac'] = df_grouped['AutoTrac_Num'].apply(
                 lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A"
             )
             df_grouped = df_grouped.drop(columns=['AutoTrac_Num'], errors='ignore')
 
-            # Reordenar columnas
-            cols_finales = [c for c in cols_a_mostrar if c in df_grouped.columns]
-            df_display_final = df_grouped[cols_finales]
+            st.dataframe(df_grouped, use_container_width=True)
+            st.caption(f"Mostrando {len(df_grouped)} equipos únicos agrupados por N° de Serie (Machine Pin).")
         else:
-            df_display_final = df_display[[c for c in cols_a_mostrar if c in df_display.columns]]
-
-        st.dataframe(df_display_final, use_container_width=True)
-        st.caption(f"Mostrando {len(df_display_final)} equipos únicos agrupados por N° de Serie (Machine Pin).")
+            st.info("No hay datos que coincidan con los filtros seleccionados.")
 
     # ==========================================
     # PESTAÑA 2: PRÓXIMAS TECNOLOGÍAS
