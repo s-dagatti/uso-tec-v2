@@ -12,32 +12,25 @@ st.set_page_config(
 
 st.title("🚜 Depurador y Consolidador de Maquinarias & Tecnología")
 st.markdown("""
-Esta herramienta procesa el reporte de maquinarias (`Machine Report Tech`), elimina registros vacíos, 
-**unifica filas duplicadas** para consolidar el PIN de la máquina con su pantalla y asigna el **período de análisis**.
+Esta herramienta procesa el reporte de maquinarias, consolida los registros, 
+y cruza los datos con el archivo de **Emparejamientos** para recuperar pantallas faltantes 
+y vincular el Número de Serie exacto de cada monitor.
 """)
 
-# --- SECCIÓN DE PARÁMETROS (FECHAS DE ANÁLISIS) ---
+# --- SECCIÓN DE PARÁMETROS Y CARGA ---
 st.sidebar.header("📅 Período de Análisis")
 fecha_inicio = st.sidebar.date_input("Fecha de Inicio", datetime.date(2025, 1, 1))
 fecha_fin = st.sidebar.date_input("Fecha de Fin", datetime.date.today())
 
-# Cargar archivo Excel
-uploaded_file = st.file_uploader("Cargar archivo Excel (.xlsx)", type=["xlsx"])
+st.sidebar.header("📂 Carga de Archivos")
+uploaded_file_principal = st.sidebar.file_uploader("1. Machine Report Tech (.xlsx)", type=["xlsx"])
+uploaded_file_emparejamientos = st.sidebar.file_uploader("2. Archivo Emparejamientos (.xlsx)", type=["xlsx"])
 
-if uploaded_file is not None:
-    # Leer el Excel original
-    df_raw = pd.read_excel(uploaded_file)
+if uploaded_file_principal is not None:
+    # Leer el Excel principal
+    df_raw = pd.read_excel(uploaded_file_principal)
     
-    st.subheader("📊 Diagnóstico de Datos Originales")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total de filas cargadas", len(df_raw))
-    c2.metric("Sin Machine Pin", int(df_raw['Machine Pin'].isna().sum()))
-    c3.metric("Sin Monitor/Pantalla", int(df_raw['Latest Display Hardware Type'].isna().sum()))
-    
-    with st.expander("Ver muestra de datos originales"):
-        st.dataframe(df_raw.head(10), use_container_width=True)
-    
-    if st.button("🚀 Procesar y Limpiar Base de Datos", type="primary"):
+    if st.button("🚀 Procesar, Limpiar y Emparejar Base de Datos", type="primary"):
         # PASO 1: Eliminar filas completamente vacías en las 3 variables clave
         mask_empty = (
             df_raw['Machine Pin'].isna() & 
@@ -80,13 +73,67 @@ if uploaded_file is not None:
             df_cleaned['Fecha Inicio'] = fecha_inicio.strftime('%Y-%m-%d')
             df_cleaned['Fecha Fin'] = fecha_fin.strftime('%Y-%m-%d')
             
-        st.success("¡Base de datos procesada, unificada y con fechas asignadas exitosamente!")
+        # PASO 4: EMPAREJAMIENTO DE MONITORES
+        if uploaded_file_emparejamientos is not None:
+            try:
+                # Leer hoja 'Emparejamientos'
+                df_emp_raw = pd.read_excel(uploaded_file_emparejamientos, sheet_name='Emparejamientos')
+                
+                # Filtrar solo Monitores y limpiar strings para el cruce
+                df_monitores = df_emp_raw[df_emp_raw['Tipo'] == 'Monitor'].copy()
+                df_monitores['Machine_Pin_emp'] = df_monitores['Número de serie de emparejamiento'].astype(str).str.strip()
+                df_monitores['Modelo'] = df_monitores['Modelo'].astype(str).str.strip()
+                
+                # Crear la nueva columna justo después de "Latest Display Software Version"
+                if 'Latest Display Software Version' in df_cleaned.columns:
+                    idx_software = df_cleaned.columns.get_loc('Latest Display Software Version')
+                    df_cleaned.insert(idx_software + 1, 'Número de Serie Monitor', pd.NA)
+                else:
+                    df_cleaned['Número de Serie Monitor'] = pd.NA
+                    
+                # Lógica de cruce fila por fila
+                def match_monitor(row):
+                    pin = str(row['Machine Pin']).strip()
+                    hw = str(row['Latest Display Hardware Type']).strip() if pd.notna(row['Latest Display Hardware Type']) else None
+                    
+                    # Buscar los monitores asociados a este PIN
+                    machine_monitors = df_monitores[df_monitores['Machine_Pin_emp'] == pin]
+                    
+                    if machine_monitors.empty:
+                        return row
+                        
+                    # Si no tiene monitor asignado en la base principal, usamos el del emparejamiento
+                    if hw is None or hw == 'nan' or hw == '':
+                        first_mon = machine_monitors.iloc[0]
+                        row['Latest Display Hardware Type'] = first_mon['Modelo']
+                        row['Latest Display Software Version'] = first_mon['Versión de software']
+                        row['Número de Serie Monitor'] = first_mon['Número de serie']
+                    else:
+                        # Si ya tiene un monitor, tratamos de cruzar PIN + Modelo para extraer el número de serie exacto
+                        match_hw = machine_monitors[machine_monitors['Modelo'] == hw]
+                        if not match_hw.empty:
+                            row['Número de Serie Monitor'] = match_hw.iloc[0]['Número de serie']
+                        else:
+                            # Fallback: asignamos el primer número de serie que aparece para esa máquina
+                            row['Número de Serie Monitor'] = machine_monitors.iloc[0]['Número de serie']
+                            
+                    return row
+
+                df_cleaned = df_cleaned.apply(match_monitor, axis=1)
+                st.success("¡Base de datos procesada, fechas asignadas y monitores emparejados exitosamente!")
+                
+            except Exception as e:
+                st.warning(f"Se procesó la base principal, pero hubo un error con el archivo de emparejamientos: {e}")
+        else:
+            st.info("La base principal se procesó, pero no se cargó archivo de emparejamientos para cruzar monitores.")
         
         # Métricas resultantes
-        st.subheader("📈 Resultado de la Consolidación")
+        st.subheader("📈 Resultado Final")
         r1, r2, r3, r4 = st.columns(4)
         r1.metric("Filas consolidadas", len(df_cleaned))
-        r2.metric("Filas reducidas/depuradas", len(df_raw) - len(df_cleaned))
+        if 'Número de Serie Monitor' in df_cleaned.columns:
+            monitores_rescatados = df_cleaned['Número de Serie Monitor'].notna().sum()
+            r2.metric("N° de Serie de Monitores recuperados", int(monitores_rescatados))
         r3.metric("Machine Pins finales", int(df_cleaned['Machine Pin'].notna().sum()))
         r4.metric("% Cobertura PIN", f"{(df_cleaned['Machine Pin'].notna().mean()*100):.1f}%")
         
@@ -101,7 +148,7 @@ if uploaded_file is not None:
         excel_data = output.getvalue()
         
         st.download_button(
-            label="📥 Descargar Base Depurada con Fechas (.xlsx)",
+            label="📥 Descargar Base Depurada Final (.xlsx)",
             data=excel_data,
             file_name=f"CONCI_Machine_Report_Tech_{fecha_inicio}_{fecha_fin}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
