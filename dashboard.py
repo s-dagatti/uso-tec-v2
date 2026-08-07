@@ -85,14 +85,18 @@ if df is not None and not df.empty:
         default_inicio = min_date_global
         ultimo_fin = max_date_global
 
-    # --- SIDEBAR: FILTROS ---
+    # --- DETECCIÓN DE NOMBRES DE COLUMNAS PARA FILTROS ---
+    col_familia = 'Product Family' if 'Product Family' in df.columns else ('Familia de Producto' if 'Familia de Producto' in df.columns else None)
+    col_licencia = 'Estado Licencia' if 'Estado Licencia' in df.columns else ('Tipo Licencia' if 'Tipo Licencia' in df.columns else None)
+
+    # --- SIDEBAR: FILTROS CASCADA ---
     st.sidebar.header("🔍 Filtros de Análisis")
     
     # Filtro 1: Sucursal
     sucursales = ["Todas"] + sorted([str(s) for s in df['Sucursal'].dropna().unique()]) if 'Sucursal' in df.columns else ["Todas"]
     sel_sucursal = st.sidebar.selectbox("1. Sucursal", sucursales)
     
-    # Filtrar DF preliminar por sucursal para adaptar las Orgs disponibles
+    # Filtrado dinámico 1
     df_pre = df.copy()
     if sel_sucursal != "Todas":
         df_pre = df_pre[df_pre['Sucursal'].astype(str) == sel_sucursal]
@@ -101,7 +105,29 @@ if df is not None and not df.empty:
     orgs = ["Todas"] + sorted([str(o) for o in df_pre['Org Name'].dropna().unique()]) if 'Org Name' in df_pre.columns else ["Todas"]
     sel_org = st.sidebar.selectbox("2. Organización (Org Name)", orgs)
     
-    # Filtro 3: Slider de Período Analizado (Por defecto en el último período)
+    # Filtrado dinámico 2
+    if sel_org != "Todas":
+        df_pre = df_pre[df_pre['Org Name'].astype(str) == sel_org]
+
+    # Filtro 3: Familia de Máquina
+    if col_familia and col_familia in df_pre.columns:
+        familias = ["Todas"] + sorted([str(f) for f in df_pre[col_familia].dropna().unique()])
+    else:
+        familias = ["Todas"]
+    sel_familia = st.sidebar.selectbox("3. Familia de Máquina", familias)
+
+    # Filtrado dinámico 3
+    if col_familia and sel_familia != "Todas":
+        df_pre = df_pre[df_pre[col_familia].astype(str) == sel_familia]
+
+    # Filtro 4: Tipo / Estado de Licencia
+    if col_licencia and col_licencia in df_pre.columns:
+        licencias = ["Todas"] + sorted([str(l) for l in df_pre[col_licencia].dropna().unique()])
+    else:
+        licencias = ["Todas"]
+    sel_licencia = st.sidebar.selectbox("4. Tipo/Estado de Licencia", licencias)
+
+    # Filtro 5: Slider de Período Analizado
     st.sidebar.markdown("---")
     st.sidebar.subheader("📅 Período Analizado")
     
@@ -116,7 +142,7 @@ if df is not None and not df.empty:
         rango_fechas = (min_date_global, max_date_global)
         st.sidebar.info(f"Fecha analizada: `{max_date_global}`")
 
-    # --- APLICACIÓN DE FILTROS A LA BASE ---
+    # --- APLICACIÓN DE TODOS LOS FILTROS A LA BASE ---
     df_filtered = df.copy()
     
     if sel_sucursal != "Todas":
@@ -124,6 +150,12 @@ if df is not None and not df.empty:
         
     if sel_org != "Todas":
         df_filtered = df_filtered[df_filtered['Org Name'].astype(str) == sel_org]
+
+    if col_familia and sel_familia != "Todas":
+        df_filtered = df_filtered[df_filtered[col_familia].astype(str) == sel_familia]
+
+    if col_licencia and sel_licencia != "Todas":
+        df_filtered = df_filtered[df_filtered[col_licencia].astype(str) == sel_licencia]
         
     if 'Fecha_Fin_DT' in df_filtered.columns and not df_filtered['Fecha_Fin_DT'].dropna().empty:
         inicio_sel, fin_sel = rango_fechas
@@ -142,23 +174,21 @@ if df is not None and not df.empty:
         
         # --- CÁLCULO DE KPIS PARA AUTOTRAC ---
         if 'AutoTrac' in df_filtered.columns:
-            # Excluir nulos para AutoTrac (Lógica de negocio: los nulos no se consideran 0)
+            # Excluir nulos para AutoTrac
             df_autotrac_valid = df_filtered[df_filtered['AutoTrac'].notna()].copy()
             
-            # Convierte a numérico por seguridad si viene como texto/porcentaje
             df_autotrac_valid['AutoTrac_Num'] = pd.to_numeric(
                 df_autotrac_valid['AutoTrac'].astype(str).str.replace('%', '').str.replace(',', '.'), 
                 errors='coerce'
             )
             
-            # Solo máquinas donde AutoTrac tiene un registro de uso/presencia
-            # 1. Cantidad de máquinas únicas (por Machine Pin)
+            # Cantidad de máquinas únicas (por Machine Pin)
             if 'Machine Pin' in df_autotrac_valid.columns:
                 cant_maquinas_autotrac = df_autotrac_valid['Machine Pin'].dropna().nunique()
             else:
                 cant_maquinas_autotrac = len(df_autotrac_valid)
                 
-            # 2. Promedio % de uso de AutoTrac (ignora completamente los nulos)
+            # Promedio % de uso
             promedio_autotrac = df_autotrac_valid['AutoTrac_Num'].mean()
             
         else:
@@ -199,15 +229,36 @@ if df is not None and not df.empty:
                 df_filtered['Org Name'].astype(str).str.contains(busqueda, case=False, na=False) |
                 df_filtered['Número de Serie Monitor'].astype(str).str.contains(busqueda, case=False, na=False)
             )
-            df_display = df_filtered[mask_search]
+            df_display = df_filtered[mask_search].copy()
         else:
-            df_display = df_filtered
+            df_display = df_filtered.copy()
 
-        st.dataframe(df_display, use_container_width=True)
-        st.caption(f"Mostrando {len(df_display)} registros de un total de {len(df_filtered)}.")
+        # --- FILTRADO DE COLUMNAS PARA MOSTRAR ---
+        # 1. Eliminar columnas auxiliares de fechas internas
+        columnas_a_ignorar = ['Fecha_Fin_DT', 'Fecha_Inicio_DT', 'AutoTrac_Num']
+        cols_disponibles = [c for c in df_display.columns if c not in columnas_a_ignorar]
+
+        # 2. Omitir 'latest display software version' (cualquier combinación de mayúsculas/minúsculas)
+        cols_disponibles = [c for c in cols_disponibles if 'display software' not in c.lower()]
+
+        # 3. Cortar columnas hasta 'AutoTrac' (inclusive), pero asegurando mantener 'Sucursal'
+        if 'AutoTrac' in cols_disponibles:
+            idx_autotrac = cols_disponibles.index('AutoTrac')
+            cols_finales = cols_disponibles[:idx_autotrac + 1]
+        else:
+            cols_finales = cols_disponibles
+
+        # Asegurar que Sucursal esté incluida si existía originalmente
+        if 'Sucursal' in cols_disponibles and 'Sucursal' not in cols_finales:
+            cols_finales.insert(0, 'Sucursal')
+
+        df_display_final = df_display[cols_finales]
+
+        st.dataframe(df_display_final, use_container_width=True)
+        st.caption(f"Mostrando {len(df_display_final)} registros y {len(cols_finales)} columnas.")
 
     # ==========================================
     # PESTAÑA 2: PRÓXIMAS TECNOLOGÍAS
     # ==========================================
     with tab_proximas:
-        st.info("🚧 En los siguientes pasos iremos agregando los análisis para RowSense, AutoPath, Machine Sync, etc.")
+        st.info("🚧 Próximamente habilitaremos aquí los análisis para RowSense, AutoPath, Machine Sync, etc.")
