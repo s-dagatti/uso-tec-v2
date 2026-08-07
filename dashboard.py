@@ -177,10 +177,12 @@ if df is not None and not df.empty:
             # Excluir nulos para AutoTrac
             df_autotrac_valid = df_filtered[df_filtered['AutoTrac'].notna()].copy()
             
+            # Convertir a número flotante
             df_autotrac_valid['AutoTrac_Num'] = pd.to_numeric(
                 df_autotrac_valid['AutoTrac'].astype(str).str.replace('%', '').str.replace(',', '.'), 
                 errors='coerce'
             )
+            df_autotrac_valid = df_autotrac_valid[df_autotrac_valid['AutoTrac_Num'].notna()]
             
             # Cantidad de máquinas únicas (por Machine Pin)
             if 'Machine Pin' in df_autotrac_valid.columns:
@@ -188,8 +190,8 @@ if df is not None and not df.empty:
             else:
                 cant_maquinas_autotrac = len(df_autotrac_valid)
                 
-            # Promedio % de uso
-            promedio_autotrac = df_autotrac_valid['AutoTrac_Num'].mean()
+            # Promedio % de uso (* 100 porque viene en decimales)
+            promedio_autotrac = df_autotrac_valid['AutoTrac_Num'].mean() * 100
             
         else:
             cant_maquinas_autotrac = 0
@@ -208,7 +210,7 @@ if df is not None and not df.empty:
         kpi_col2.metric(
             label="📈 % de Uso Promedio AutoTrac",
             value=val_promedio_str,
-            help="Promedio de uso calculado únicamente sobre los registros con datos válidos (excluyendo campos nulos)."
+            help="Promedio de uso calculado únicamente sobre los registros con datos válidos (excluyendo campos nulos) multiplicado x100."
         )
         
         kpi_col3.metric(
@@ -218,44 +220,74 @@ if df is not None and not df.empty:
 
         st.markdown("---")
 
-        # --- TABLA DEL FINAL CON BUSCADOR ---
-        st.subheader("🔍 Tabla Detallada de Equipos")
+        # --- TABLA DEL FINAL CON BUSCADOR Y AGRUPACIÓN ---
+        st.subheader("🔍 Tabla Resumen por Equipo")
         
-        busqueda = st.text_input("🔎 Buscar por Machine Pin, Org Name o Número de Serie Monitor:", "")
+        busqueda = st.text_input("🔎 Buscar por Machine Pin u Org Name:", "")
         
         if busqueda:
             mask_search = (
                 df_filtered['Machine Pin'].astype(str).str.contains(busqueda, case=False, na=False) |
-                df_filtered['Org Name'].astype(str).str.contains(busqueda, case=False, na=False) |
-                df_filtered['Número de Serie Monitor'].astype(str).str.contains(busqueda, case=False, na=False)
+                df_filtered['Org Name'].astype(str).str.contains(busqueda, case=False, na=False)
             )
             df_display = df_filtered[mask_search].copy()
         else:
             df_display = df_filtered.copy()
 
-        # --- FILTRADO DE COLUMNAS PARA MOSTRAR ---
-        # 1. Eliminar columnas auxiliares de fechas internas
-        columnas_a_ignorar = ['Fecha_Fin_DT', 'Fecha_Inicio_DT', 'AutoTrac_Num']
-        cols_disponibles = [c for c in df_display.columns if c not in columnas_a_ignorar]
+        # --- DEFINIR COLUMNAS A EXCLUIR ---
+        ignorar_exactos = [
+            'dealer', 'fecha de inicio', 'fecha de fin', 'numero de serie del monitor',
+            'número de serie monitor', 'fecha_fin_dt', 'fecha_inicio_dt', 'autotrac_num'
+        ]
+        
+        cols_a_mostrar = []
+        for c in df_display.columns:
+            c_lower = c.lower().strip()
+            if c_lower in ignorar_exactos:
+                continue
+            if 'display software' in c_lower:
+                continue
+            cols_a_mostrar.append(c)
 
-        # 2. Omitir 'latest display software version' (cualquier combinación de mayúsculas/minúsculas)
-        cols_disponibles = [c for c in cols_disponibles if 'display software' not in c.lower()]
+        # Cortar hasta 'AutoTrac' si existe
+        if 'AutoTrac' in cols_a_mostrar:
+            idx_autotrac = cols_a_mostrar.index('AutoTrac')
+            cols_a_mostrar = cols_a_mostrar[:idx_autotrac + 1]
 
-        # 3. Cortar columnas hasta 'AutoTrac' (inclusive), pero asegurando mantener 'Sucursal'
-        if 'AutoTrac' in cols_disponibles:
-            idx_autotrac = cols_disponibles.index('AutoTrac')
-            cols_finales = cols_disponibles[:idx_autotrac + 1]
+        if 'Sucursal' in df_display.columns and 'Sucursal' not in cols_a_mostrar:
+            cols_a_mostrar.insert(0, 'Sucursal')
+
+        # --- AGRUPACIÓN POR NÚMERO DE SERIE DE MÁQUINA (Machine Pin) ---
+        if 'Machine Pin' in df_display.columns and not df_display.empty:
+            # Crear columna numérica para promediar correctamente
+            df_display['AutoTrac_Num'] = pd.to_numeric(
+                df_display['AutoTrac'].astype(str).str.replace('%', '').str.replace(',', '.'), 
+                errors='coerce'
+            ) * 100
+
+            # Columnas de metadatos (Sucursal, Org Name, Product Family, etc.)
+            cols_meta = [c for c in cols_a_mostrar if c not in ['Machine Pin', 'AutoTrac']]
+            
+            # Diccionario de agregación (toma el primer valor para metadatos y promedia AutoTrac)
+            agg_dict = {c: 'first' for c in cols_meta if c in df_display.columns}
+            agg_dict['AutoTrac_Num'] = 'mean'
+
+            df_grouped = df_display.groupby('Machine Pin', as_index=False, dropna=False).agg(agg_dict)
+
+            # Formatear el promedio de AutoTrac con %
+            df_grouped['AutoTrac'] = df_grouped['AutoTrac_Num'].apply(
+                lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A"
+            )
+            df_grouped = df_grouped.drop(columns=['AutoTrac_Num'], errors='ignore')
+
+            # Reordenar columnas
+            cols_finales = [c for c in cols_a_mostrar if c in df_grouped.columns]
+            df_display_final = df_grouped[cols_finales]
         else:
-            cols_finales = cols_disponibles
-
-        # Asegurar que Sucursal esté incluida si existía originalmente
-        if 'Sucursal' in cols_disponibles and 'Sucursal' not in cols_finales:
-            cols_finales.insert(0, 'Sucursal')
-
-        df_display_final = df_display[cols_finales]
+            df_display_final = df_display[[c for c in cols_a_mostrar if c in df_display.columns]]
 
         st.dataframe(df_display_final, use_container_width=True)
-        st.caption(f"Mostrando {len(df_display_final)} registros y {len(cols_finales)} columnas.")
+        st.caption(f"Mostrando {len(df_display_final)} equipos únicos agrupados por N° de Serie (Machine Pin).")
 
     # ==========================================
     # PESTAÑA 2: PRÓXIMAS TECNOLOGÍAS
