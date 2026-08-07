@@ -150,8 +150,8 @@ if df is not None and not df.empty:
             hw = str(row[col_hardware]).strip() if col_hardware and pd.notna(row[col_hardware]) else ""
             lic_nombre = str(row[col_lic_nombre]).strip() if col_lic_nombre and pd.notna(row[col_lic_nombre]) else ""
             
-            f_ini = row[col_v_lic_inicio] if col_v_lic_inicio in row else "-"
-            f_fin = row[col_w_lic_fin] if col_w_lic_fin in row else "-"
+            f_ini = row[col_v_lic_inicio] if col_v_lic_inicio in row and pd.notna(row[col_v_lic_inicio]) else "-"
+            f_fin = row[col_w_lic_fin] if col_w_lic_fin in row and pd.notna(row[col_w_lic_fin]) else "-"
             
             is_g5 = hw.upper().startswith("G5")
             is_autotrac = lic_nombre.lower().startswith("autotrac")
@@ -188,6 +188,10 @@ if df is not None and not df.empty:
             if pd.notna(val_num) and val_num < 60.0: return 'background-color: #ffcdd2; color: #b71c1c; font-weight: bold;'
             return ''
 
-        df_show = df_final[['Sucursal', 'Org Name', 'Product Family', 'Machine Pin', 'Hardware Monitor', 'Licencia AutoTrac', 'Fecha Inicio', 'Fecha Fin', '% Uso AutoTrac']]
+        # Selección segura de columnas para evitar KeyError si alguna cambia de nombre
+        cols_a_mostrar = ['Sucursal', 'Org Name', 'Product Family', 'Machine Pin', 'Hardware Monitor', 'Licencia AutoTrac', 'Fecha Inicio', 'Fecha Fin', '% Uso AutoTrac']
+        cols_existentes = [c for c in cols_a_mostrar if c in df_final.columns]
         
-        st.dataframe(df_show.style.apply(lambda s: [resaltar(v) for v in df_final['% Uso']], subset=['% Uso AutoTrac']), use_container_width=True)
+        df_show = df_final[cols_existentes]
+        
+        st.dataframe(df_show.style.apply(lambda s: [resaltar(v) for v in df_final['% Uso']], subset=['% Uso AutoTrac'] if '% Uso AutoTrac' in df_show.columns else None), use_container_width=True)
