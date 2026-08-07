@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import io
 import datetime
+import requests
+import base64
 
 # Configuración de la página
 st.set_page_config(
@@ -16,6 +18,54 @@ Esta herramienta procesa el reporte de maquinarias, consolida los registros,
 cruza los datos con los archivos de **Emparejamientos**, **Licencias** y **Organizaciones/Sucursales**, 
 y permite **completar manualmente** los equipos que registraron uso de tecnología pero no tienen identificador.
 """)
+
+# --- FUNCIÓN PARA SUBIR ARCHIVO A GITHUB VIA API ---
+def subir_a_github(file_bytes, file_name):
+    try:
+        # Cargar credenciales desde st.secrets
+        gh_config = st.secrets["github"]
+        token = gh_config["token"]
+        repo = gh_config["repo"]
+        branch = gh_config.get("branch", "main")
+        
+        # Ruta donde se guardará en el repositorio (ej: data/nombre_archivo.xlsx)
+        path = f"data/{file_name}"
+        url = f"https://api.github.com/repos/{repo}/contents/{path}"
+        
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        # 1. Verificar si el archivo ya existe en GitHub para obtener su SHA (requerido para actualizar)
+        res_get = requests.get(f"{url}?ref={branch}", headers=headers)
+        sha = res_get.json().get("sha") if res_get.status_code == 200 else None
+        
+        # 2. Convertir el contenido del archivo Excel a Base64
+        content_b64 = base64.b64encode(file_bytes).decode('utf-8')
+        
+        # 3. Preparar el payload de la solicitud PUT
+        payload = {
+            "message": f"🤖 Auto-update base de datos depurada: {file_name}",
+            "content": content_b64,
+            "branch": branch
+        }
+        if sha:
+            payload["sha"] = sha  # Si existe, actualiza el archivo existente
+            
+        # 4. Enviar a GitHub
+        res_put = requests.put(url, headers=headers, json=payload)
+        
+        if res_put.status_code in [200, 201]:
+            return True, f"✅ Archivo subido con éxito a GitHub en `{repo}/{path}`"
+        else:
+            return False, f"❌ Error de GitHub ({res_put.status_code}): {res_put.json().get('message')}"
+            
+    except KeyError:
+        return False, "⚠️ No se encontraron las credenciales de GitHub en `st.secrets`. Revisa tu archivo `.streamlit/secrets.toml`."
+    except Exception as e:
+        return False, f"❌ Error inesperado al conectar con GitHub: {e}"
+
 
 # --- INICIALIZAR VARIABLES EN SESIÓN ---
 if 'df_procesado' not in st.session_state:
@@ -34,10 +84,9 @@ uploaded_file_orgs = st.sidebar.file_uploader("4. Base Orgs & Sucursales (.csv)"
 
 if uploaded_file_principal is not None:
     if st.sidebar.button("🚀 Procesar, Limpiar y Emparejar", type="primary"):
-        # Leer el Excel principal
         df_raw = pd.read_excel(uploaded_file_principal)
         
-        # PASO 1: Eliminar filas vacías en campos clave
+        # PASO 1: Eliminar filas vacías
         mask_empty = (
             df_raw['Machine Pin'].isna() & 
             df_raw['Product Family'].isna() & 
@@ -69,7 +118,7 @@ if uploaded_file_principal is not None:
             .drop(columns=['Model Year_fill', 'Product Family_fill'], errors='ignore')
         )
         
-        # PASO 3: Insertar Fechas justo después de 'Dealer'
+        # PASO 3: Insertar Fechas
         if 'Dealer' in df_cleaned.columns:
             dealer_idx = df_cleaned.columns.get_loc('Dealer') + 1
             df_cleaned.insert(dealer_idx, 'Fecha Inicio', fecha_inicio.strftime('%Y-%m-%d'))
@@ -117,7 +166,6 @@ if uploaded_file_principal is not None:
             except Exception as e:
                 st.sidebar.warning(f"Error procesando emparejamientos: {e}")
         
-        # Guardar en sesión
         st.session_state['df_procesado'] = df_cleaned
 
 
@@ -159,11 +207,8 @@ if st.session_state['df_procesado'] is not None:
     if uploaded_file_licencias is not None:
         try:
             df_lic = pd.read_excel(uploaded_file_licencias)
-            
-            # Desestimar "Receptor de Posición"
             df_lic = df_lic[df_lic['Tipo'].astype(str).str.strip().str.lower() != 'receptor de posición'].copy()
             
-            # Normalizar strings para el cruce
             df_final['temp_org'] = df_final['Org Name'].astype(str).str.strip().str.lower()
             df_final['temp_pin'] = df_final['Machine Pin'].astype(str).str.strip().str.lower()
             df_final['temp_mon'] = df_final['Número de Serie Monitor'].astype(str).str.strip().str.lower()
@@ -172,7 +217,6 @@ if st.session_state['df_procesado'] is not None:
             df_lic['temp_serie'] = df_lic['N.° de serie'].astype(str).str.strip().str.lower()
             
             records = []
-            
             for idx, row in df_final.iterrows():
                 m_org = df_lic['temp_org'] == row['temp_org']
                 m_serie = (df_lic['temp_serie'] == row['temp_pin']) | (df_lic['temp_serie'] == row['temp_mon'])
@@ -205,7 +249,7 @@ if st.session_state['df_procesado'] is not None:
         except Exception as e:
             st.error(f"Error procesando las licencias: {e}")
 
-    # PASO 7: CRUCE DE SUCURSAL DESDE EL CSV DE ORGS
+    # PASO 7: CRUCE DE SUCURSAL DESDE EL CSV
     if uploaded_file_orgs is not None:
         try:
             df_orgs_raw = pd.read_csv(uploaded_file_orgs)
@@ -219,8 +263,6 @@ if st.session_state['df_procesado'] is not None:
                     return str(val).strip()
 
             mapping_sucursal = {}
-            
-            # Mapear Columna A (Org ID) -> Columna B (SUC?)
             if 'Org ID' in df_orgs_raw.columns and 'SUC?' in df_orgs_raw.columns:
                 for _, r in df_orgs_raw.iterrows():
                     if pd.notna(r['Org ID']) and pd.notna(r['SUC?']):
@@ -228,7 +270,6 @@ if st.session_state['df_procesado'] is not None:
                         if k:
                             mapping_sucursal[k] = str(r['SUC?']).strip()
             
-            # Buscar el nombre de la columna de Org ID en la base depurada
             col_org_id = None
             for candidate in ['Org Id', 'Org ID', 'ORG ID', 'Org id']:
                 if candidate in df_final.columns:
@@ -237,7 +278,6 @@ if st.session_state['df_procesado'] is not None:
                     
             if col_org_id:
                 df_final['temp_org_key'] = df_final[col_org_id].apply(clean_org_id)
-                # Se asigna como la última columna 'Sucursal'
                 df_final['Sucursal'] = df_final['temp_org_key'].map(mapping_sucursal)
                 df_final.drop(columns=['temp_org_key'], inplace=True, errors='ignore')
                 st.success("✅ Sucursales vinculadas correctamente.")
@@ -246,7 +286,7 @@ if st.session_state['df_procesado'] is not None:
         except Exception as e:
             st.error(f"Error procesando el archivo de Organizaciones/Sucursales: {e}")
 
-    # --- MÉTRICAS Y DESCARGA ---
+    # --- MÉTRICAS ---
     st.subheader("📈 Resultado Final")
     r1, r2, r3, r4, r5 = st.columns(5)
     r1.metric("Filas Totales", len(df_final))
@@ -268,15 +308,31 @@ if st.session_state['df_procesado'] is not None:
     st.subheader("📋 Base de Datos Resultante")
     st.dataframe(df_final, use_container_width=True)
     
-    # Preparar el archivo de descarga
+    # --- PREPARACIÓN DEL ARCHIVO EXCEL EN MEMORIA ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_final.to_excel(writer, index=False, sheet_name='Base_Consolidada')
-    excel_data = output.getvalue()
+    excel_bytes = output.getvalue()
+    file_name_output = f"CONCI_Machine_Report_Tech_Final_{fecha_inicio}_{fecha_fin}.xlsx"
+
+    # --- ACCIONES DE DESCARGA Y CARGA A GITHUB ---
+    st.subheader("🚀 Exportación e Integración")
+    c1, c2 = st.columns([1, 1])
     
-    st.download_button(
-        label="📥 Descargar Base Consolidada Final (.xlsx)",
-        data=excel_data,
-        file_name=f"CONCI_Machine_Report_Tech_Final_{fecha_inicio}_{fecha_fin}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    with c1:
+        st.download_button(
+            label="📥 Descargar Base Consolidada (.xlsx)",
+            data=excel_bytes,
+            file_name=file_name_output,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+        
+    with c2:
+        if st.button("📤 Cargar Base de Datos a GitHub", type="primary", use_container_width=True):
+            with st.spinner("Subiendo archivo a GitHub..."):
+                exito, mensaje = subir_a_github(excel_bytes, file_name_output)
+                if exito:
+                    st.success(mensaje)
+                else:
+                    st.error(mensaje)
