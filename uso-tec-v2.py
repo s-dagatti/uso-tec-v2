@@ -13,8 +13,8 @@ st.set_page_config(
 st.title("🚜 Depurador y Consolidador de Maquinarias & Tecnología")
 st.markdown("""
 Esta herramienta procesa el reporte de maquinarias, consolida los registros, 
-cruza los datos con los archivos de **Emparejamientos** y **Licencias**, y requiere **completar manualmente** 
-los equipos que registraron uso de tecnología pero no tienen identificador.
+cruza los datos con los archivos de **Emparejamientos**, **Licencias** y **Organizaciones/Sucursales**, 
+y permite **completar manualmente** los equipos que registraron uso de tecnología pero no tienen identificador.
 """)
 
 # --- INICIALIZAR VARIABLES EN SESIÓN ---
@@ -30,13 +30,14 @@ st.sidebar.header("📂 Carga de Archivos")
 uploaded_file_principal = st.sidebar.file_uploader("1. Machine Report Tech (.xlsx)", type=["xlsx"])
 uploaded_file_emparejamientos = st.sidebar.file_uploader("2. Archivo Emparejamientos (.xlsx)", type=["xlsx"])
 uploaded_file_licencias = st.sidebar.file_uploader("3. Archivo Licencias (.xlsx)", type=["xlsx"])
+uploaded_file_orgs = st.sidebar.file_uploader("4. Base Orgs & Sucursales (.csv)", type=["csv"])
 
 if uploaded_file_principal is not None:
     if st.sidebar.button("🚀 Procesar, Limpiar y Emparejar", type="primary"):
         # Leer el Excel principal
         df_raw = pd.read_excel(uploaded_file_principal)
         
-        # PASO 1: Eliminar filas vacías
+        # PASO 1: Eliminar filas vacías en campos clave
         mask_empty = (
             df_raw['Machine Pin'].isna() & 
             df_raw['Product Family'].isna() & 
@@ -68,7 +69,7 @@ if uploaded_file_principal is not None:
             .drop(columns=['Model Year_fill', 'Product Family_fill'], errors='ignore')
         )
         
-        # PASO 3: Insertar Fechas
+        # PASO 3: Insertar Fechas justo después de 'Dealer'
         if 'Dealer' in df_cleaned.columns:
             dealer_idx = df_cleaned.columns.get_loc('Dealer') + 1
             df_cleaned.insert(dealer_idx, 'Fecha Inicio', fecha_inicio.strftime('%Y-%m-%d'))
@@ -162,7 +163,7 @@ if st.session_state['df_procesado'] is not None:
             # Desestimar "Receptor de Posición"
             df_lic = df_lic[df_lic['Tipo'].astype(str).str.strip().str.lower() != 'receptor de posición'].copy()
             
-            # Preparar columnas para cruce (minúsculas y sin espacios para evitar errores de tipeo)
+            # Normalizar strings para el cruce
             df_final['temp_org'] = df_final['Org Name'].astype(str).str.strip().str.lower()
             df_final['temp_pin'] = df_final['Machine Pin'].astype(str).str.strip().str.lower()
             df_final['temp_mon'] = df_final['Número de Serie Monitor'].astype(str).str.strip().str.lower()
@@ -173,16 +174,13 @@ if st.session_state['df_procesado'] is not None:
             records = []
             
             for idx, row in df_final.iterrows():
-                # Condición 1: Match de Nombre de Cliente (Org Name)
                 m_org = df_lic['temp_org'] == row['temp_org']
-                # Condición 2: Match de Serie (con Machine Pin O con Display Pin)
                 m_serie = (df_lic['temp_serie'] == row['temp_pin']) | (df_lic['temp_serie'] == row['temp_mon'])
                 
                 matches = df_lic[m_org & m_serie]
                 row_dict = row.to_dict()
                 
                 if matches.empty:
-                    # Si no hay licencias, completamos con nulos
                     row_dict['Nombre de licencia'] = pd.NA
                     row_dict['Número de licencia'] = pd.NA
                     row_dict['Estado Licencia'] = pd.NA
@@ -191,7 +189,6 @@ if st.session_state['df_procesado'] is not None:
                     row_dict['Fecha de vencimiento de pedido'] = pd.NA
                     records.append(row_dict)
                 else:
-                    # Si hay 1 o más licencias, creamos una fila por cada licencia
                     for _, m_row in matches.iterrows():
                         new_row = row_dict.copy()
                         new_row['Nombre de licencia'] = m_row['Nombre de licencia']
@@ -203,27 +200,70 @@ if st.session_state['df_procesado'] is not None:
                         records.append(new_row)
                         
             df_final = pd.DataFrame(records)
-            # Limpiamos las columnas temporales
             df_final.drop(columns=['temp_org', 'temp_pin', 'temp_mon'], inplace=True, errors='ignore')
-            
             st.success("✅ Archivo de Licencias cruzado correctamente.")
         except Exception as e:
             st.error(f"Error procesando las licencias: {e}")
 
+    # PASO 7: CRUCE DE SUCURSAL DESDE EL CSV DE ORGS
+    if uploaded_file_orgs is not None:
+        try:
+            df_orgs_raw = pd.read_csv(uploaded_file_orgs)
+            
+            def clean_org_id(val):
+                if pd.isna(val):
+                    return None
+                try:
+                    return str(int(float(val))).strip()
+                except (ValueError, TypeError):
+                    return str(val).strip()
+
+            mapping_sucursal = {}
+            
+            # Mapear Columna A (Org ID) -> Columna B (SUC?)
+            if 'Org ID' in df_orgs_raw.columns and 'SUC?' in df_orgs_raw.columns:
+                for _, r in df_orgs_raw.iterrows():
+                    if pd.notna(r['Org ID']) and pd.notna(r['SUC?']):
+                        k = clean_org_id(r['Org ID'])
+                        if k:
+                            mapping_sucursal[k] = str(r['SUC?']).strip()
+            
+            # Buscar el nombre de la columna de Org ID en la base depurada
+            col_org_id = None
+            for candidate in ['Org Id', 'Org ID', 'ORG ID', 'Org id']:
+                if candidate in df_final.columns:
+                    col_org_id = candidate
+                    break
+                    
+            if col_org_id:
+                df_final['temp_org_key'] = df_final[col_org_id].apply(clean_org_id)
+                # Se asigna como la última columna 'Sucursal'
+                df_final['Sucursal'] = df_final['temp_org_key'].map(mapping_sucursal)
+                df_final.drop(columns=['temp_org_key'], inplace=True, errors='ignore')
+                st.success("✅ Sucursales vinculadas correctamente.")
+            else:
+                st.warning("No se encontró la columna de Org ID en la base depurada para realizar el cruce.")
+        except Exception as e:
+            st.error(f"Error procesando el archivo de Organizaciones/Sucursales: {e}")
+
     # --- MÉTRICAS Y DESCARGA ---
     st.subheader("📈 Resultado Final")
-    r1, r2, r3, r4 = st.columns(4)
-    r1.metric("Filas Totales (incluye licencias)", len(df_final))
+    r1, r2, r3, r4, r5 = st.columns(5)
+    r1.metric("Filas Totales", len(df_final))
     
     if 'Número de Serie Monitor' in df_final.columns:
         monitores = df_final['Número de Serie Monitor'].notna().sum()
         r2.metric("Monitores Emparejados", int(monitores))
         
-    r3.metric("Machine Pins Activos", int(df_final['Machine Pin'].notna().sum()))
+    r3.metric("Machine Pins", int(df_final['Machine Pin'].notna().sum()))
     
     if 'Número de licencia' in df_final.columns:
         licencias_match = df_final['Número de licencia'].notna().sum()
         r4.metric("Licencias Cruzadas", int(licencias_match))
+        
+    if 'Sucursal' in df_final.columns:
+        sucursales_match = df_final['Sucursal'].notna().sum()
+        r5.metric("Sucursales Asignadas", int(sucursales_match))
     
     st.subheader("📋 Base de Datos Resultante")
     st.dataframe(df_final, use_container_width=True)
