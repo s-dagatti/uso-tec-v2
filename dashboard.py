@@ -3,8 +3,6 @@ import pandas as pd
 import requests
 import base64
 import io
-import plotly.express as px
-import plotly.graph_objects as go
 
 # Configuración de la página
 st.set_page_config(
@@ -17,7 +15,7 @@ st.set_page_config(
 NOMBRE_ARCHIVO_GITHUB = "data/base_datos_consolidada.xlsx"
 
 # --- FUNCIÓN DE LECTURA DESDE GITHUB (CON CACHÉ) ---
-@st.cache_data(ttl=300)  # Se actualiza cada 5 minutos automáticamente
+@st.cache_data(ttl=300)
 def cargar_datos_github():
     try:
         gh_config = st.secrets["github"]
@@ -44,192 +42,172 @@ def cargar_datos_github():
         st.error(f"❌ Error al conectar con GitHub para leer la base de datos: {e}")
         return None
 
-# --- ENCABEZADO ---
-st.title("📊 Tablero de Análisis de Uso de Tecnología y Licencias")
-st.markdown("Monitoreo en tiempo real de la adopción tecnológica, monitores emparejados y estado de licencias por sucursal.")
-
-# Botón para forzar actualización de datos
-col_title, col_btn = st.columns([4, 1])
+# --- ENCABEZADO Y REFRESCAR ---
+col_head, col_btn = st.columns([4, 1])
+with col_head:
+    st.title("📊 Dashboard de Adopción Tecnológica")
 with col_btn:
-    if st.button("🔄 Refrescar Datos"):
+    if st.button("🔄 Refrescar Base"):
         st.cache_data.clear()
         st.rerun()
 
 # --- CARGA DE DATOS ---
-with st.spinner("Cargando la base de datos consolidada desde GitHub..."):
+with st.spinner("Cargando la base de datos desde GitHub..."):
     df = cargar_datos_github()
 
 if df is not None and not df.empty:
     
-    # Preprocesamiento de fechas para filtros
+    # 1. PREPROCESAMIENTO DE FECHAS
     if 'Fecha Fin' in df.columns:
-        df['Fecha Fin DT'] = pd.to_datetime(df['Fecha Fin'], errors='coerce')
+        df['Fecha_Fin_DT'] = pd.to_datetime(df['Fecha Fin'], errors='coerce')
     else:
-        df['Fecha Fin DT'] = pd.NaT
+        df['Fecha_Fin_DT'] = pd.NaT
 
-    # --- FILTROS EN BARRA LATERAL ---
+    if 'Fecha Inicio' in df.columns:
+        df['Fecha_Inicio_DT'] = pd.to_datetime(df['Fecha Inicio'], errors='coerce')
+    else:
+        df['Fecha_Inicio_DT'] = pd.NaT
+
+    # Determinar el rango global de fechas
+    fechas_validas = df['Fecha_Fin_DT'].dropna()
+    if not fechas_validas.empty:
+        min_date_global = df['Fecha_Inicio_DT'].dropna().min().date() if not df['Fecha_Inicio_DT'].dropna().empty else fechas_validas.min().date()
+        max_date_global = fechas_validas.max().date()
+        
+        # Último período registrado para poner de default
+        ultimo_fin = max_date_global
+        ultimo_inicio = df[df['Fecha_Fin_DT'] == pd.to_datetime(ultimo_fin)]['Fecha_Inicio_DT'].min()
+        default_inicio = ultimo_inicio.date() if pd.notna(ultimo_inicio) else min_date_global
+    else:
+        import datetime
+        min_date_global = datetime.date(2025, 1, 1)
+        max_date_global = datetime.date.today()
+        default_inicio = min_date_global
+        ultimo_fin = max_date_global
+
+    # --- SIDEBAR: FILTROS ---
     st.sidebar.header("🔍 Filtros de Análisis")
     
-    # 1. Filtro Sucursal
+    # Filtro 1: Sucursal
     sucursales = ["Todas"] + sorted([str(s) for s in df['Sucursal'].dropna().unique()]) if 'Sucursal' in df.columns else ["Todas"]
-    sel_sucursal = st.sidebar.selectbox("Sucursal", sucursales)
+    sel_sucursal = st.sidebar.selectbox("1. Sucursal", sucursales)
     
-    # 2. Filtro Familia de Producto
-    familias = ["Todas"] + sorted([str(f) for f in df['Product Family'].dropna().unique()]) if 'Product Family' in df.columns else ["Todas"]
-    sel_familia = st.sidebar.selectbox("Familia de Producto", familias)
+    # Filtrar DF preliminar por sucursal para adaptar las Orgs disponibles
+    df_pre = df.copy()
+    if sel_sucursal != "Todas":
+        df_pre = df_pre[df_pre['Sucursal'].astype(str) == sel_sucursal]
+        
+    # Filtro 2: Org Name
+    orgs = ["Todas"] + sorted([str(o) for o in df_pre['Org Name'].dropna().unique()]) if 'Org Name' in df_pre.columns else ["Todas"]
+    sel_org = st.sidebar.selectbox("2. Organización (Org Name)", orgs)
     
-    # 3. Filtro Estado de Licencia
-    estados_lic = ["Todos"] + sorted([str(e) for e in df['Estado Licencia'].dropna().unique()]) if 'Estado Licencia' in df.columns else ["Todos"]
-    sel_licencia = st.sidebar.selectbox("Estado de Licencia", estados_lic)
+    # Filtro 3: Slider de Período Analizado (Por defecto en el último período)
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📅 Período Analizado")
+    
+    if min_date_global < max_date_global:
+        rango_fechas = st.sidebar.slider(
+            "Selecciona el rango de fechas:",
+            min_value=min_date_global,
+            max_value=max_date_global,
+            value=(default_inicio, ultimo_fin)
+        )
+    else:
+        rango_fechas = (min_date_global, max_date_global)
+        st.sidebar.info(f"Fecha analizada: `{max_date_global}`")
 
-    # Aplicar Filtros
+    # --- APLICACIÓN DE FILTROS A LA BASE ---
     df_filtered = df.copy()
+    
     if sel_sucursal != "Todas":
         df_filtered = df_filtered[df_filtered['Sucursal'].astype(str) == sel_sucursal]
-    if sel_familia != "Todas":
-        df_filtered = df_filtered[df_filtered['Product Family'].astype(str) == sel_familia]
-    if sel_licencia != "Todos":
-        df_filtered = df_filtered[df_filtered['Estado Licencia'].astype(str) == sel_licencia]
-
-    # --- KPI METRICS ---
-    st.markdown("---")
-    kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-    
-    total_maquinas = len(df_filtered)
-    kpi1.metric("🚜 Equipos Analizados", total_maquinas)
-    
-    if 'Machine Pin' in df_filtered.columns:
-        pins_validos = df_filtered['Machine Pin'].notna().sum()
-        kpi2.metric("🆔 PINs Identificados", pins_validos, f"{round(pins_validos/total_maquinas*100, 1) if total_maquinas>0 else 0}%")
         
-    if 'Número de Serie Monitor' in df_filtered.columns:
-        monitores_val = df_filtered['Número de Serie Monitor'].notna().sum()
-        kpi3.metric("🖥️ Monitores Emparejados", monitores_val, f"{round(monitores_val/total_maquinas*100, 1) if total_maquinas>0 else 0}%")
+    if sel_org != "Todas":
+        df_filtered = df_filtered[df_filtered['Org Name'].astype(str) == sel_org]
         
-    if 'AutoTrac' in df_filtered.columns:
-        autotrac_act = df_filtered['AutoTrac'].notna().sum()
-        kpi4.metric("🛰️ Uso AutoTrac", autotrac_act, f"{round(autotrac_act/total_maquinas*100, 1) if total_maquinas>0 else 0}%")
+    if 'Fecha_Fin_DT' in df_filtered.columns and not df_filtered['Fecha_Fin_DT'].dropna().empty:
+        inicio_sel, fin_sel = rango_fechas
+        mask_fecha = (df_filtered['Fecha_Fin_DT'].dt.date >= inicio_sel) & (df_filtered['Fecha_Fin_DT'].dt.date <= fin_sel)
+        df_filtered = df_filtered[mask_fecha]
+
+    # --- ESTRUCTURA DE PESTAÑAS (TABS POR TECNOLOGÍA) ---
+    tab_autotrac, tab_proximas = st.tabs(["🛰️ AutoTrac", "🚧 Próximas Tecnologías"])
+
+    # ==========================================
+    # PESTAÑA 1: AUTOTRAC
+    # ==========================================
+    with tab_autotrac:
+        st.subheader("Análisis de Adopción: AutoTrac")
+        st.caption(f"Mostrando datos desde **{rango_fechas[0]}** hasta **{rango_fechas[1]}**")
         
-    if 'Estado Licencia' in df_filtered.columns:
-        lic_activas = (df_filtered['Estado Licencia'].astype(str).str.lower() == 'activa').sum()
-        kpi5.metric("📜 Licencias Activas", lic_activas)
-
-    st.markdown("---")
-
-    # --- SECCIÓN DE GRÁFICOS INTERACTIVOS ---
-    g1, g2 = st.columns(2)
-    
-    # Gráfico 1: Adopción de Tecnologías Key (AutoTrac, RowSense, AutoPath, etc.)
-    with g1:
-        st.subheader("🛰️ Adopción por Paquete Tecnológico")
-        tecnologias = ['AutoTrac', 'RowSense', 'AIG', 'ATIG', 'ATTA', 'AutoPath', 'Machine Sync Leader']
-        tech_counts = {}
-        for tech in tecnologias:
-            if tech in df_filtered.columns:
-                # Se excluyen nulos segun la lógica establecida
-                tech_counts[tech] = df_filtered[tech].notna().sum()
+        # --- CÁLCULO DE KPIS PARA AUTOTRAC ---
+        if 'AutoTrac' in df_filtered.columns:
+            # Excluir nulos para AutoTrac (Lógica de negocio: los nulos no se consideran 0)
+            df_autotrac_valid = df_filtered[df_filtered['AutoTrac'].notna()].copy()
+            
+            # Convierte a numérico por seguridad si viene como texto/porcentaje
+            df_autotrac_valid['AutoTrac_Num'] = pd.to_numeric(
+                df_autotrac_valid['AutoTrac'].astype(str).str.replace('%', '').str.replace(',', '.'), 
+                errors='coerce'
+            )
+            
+            # Solo máquinas donde AutoTrac tiene un registro de uso/presencia
+            # 1. Cantidad de máquinas únicas (por Machine Pin)
+            if 'Machine Pin' in df_autotrac_valid.columns:
+                cant_maquinas_autotrac = df_autotrac_valid['Machine Pin'].dropna().nunique()
+            else:
+                cant_maquinas_autotrac = len(df_autotrac_valid)
                 
-        df_tech = pd.DataFrame(list(tech_counts.items()), columns=['Tecnología', 'Equipos'])
-        df_tech['% Adopción'] = (df_tech['Equipos'] / total_maquinas * 100).round(1) if total_maquinas > 0 else 0
+            # 2. Promedio % de uso de AutoTrac (ignora completamente los nulos)
+            promedio_autotrac = df_autotrac_valid['AutoTrac_Num'].mean()
+            
+        else:
+            cant_maquinas_autotrac = 0
+            promedio_autotrac = 0.0
+
+        # --- DESPLIEGUE DE KPIS ---
+        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         
-        fig_tech = px.bar(
-            df_tech, 
-            x='Tecnología', 
-            y='Equipos',
-            text='% Adopción',
-            color='Equipos',
-            color_continuous_scale='Greens',
-            title="Cantidad de Equipos por Tecnología Detectada"
+        kpi_col1.metric(
+            label="🚜 Máquinas Usando AutoTrac",
+            value=f"{cant_maquinas_autotrac} equipos",
+            help="Cantidad de equipos únicos (sin repetir Machine Pin) con registro de uso de AutoTrac."
         )
-        fig_tech.update_traces(texttemplate='%{text}%', textposition='outside')
-        fig_tech.update_layout(showlegend=False, yaxis_title="N° de Equipos")
-        st.plotly_chart(fig_tech, use_container_width=True)
-
-    # Gráfico 2: Distribución por Sucursal
-    with g2:
-        st.subheader("🏢 Distribución de Equipos por Sucursal")
-        if 'Sucursal' in df_filtered.columns and df_filtered['Sucursal'].notna().any():
-            df_suc = df_filtered['Sucursal'].value_counts().reset_index()
-            df_suc.columns = ['Sucursal', 'Cantidad']
-            
-            fig_suc = px.pie(
-                df_suc, 
-                names='Sucursal', 
-                values='Cantidad',
-                hole=0.4,
-                title="Proporción de Equipos Monitoreados por Sucursal"
-            )
-            fig_suc.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig_suc, use_container_width=True)
-        else:
-            st.info("No hay datos de Sucursal disponibles para graficar.")
-
-    g3, g4 = st.columns(2)
-    
-    # Gráfico 3: Estado de Licencias
-    with g3:
-        st.subheader("📜 Estado de Licencias por Tipo")
-        if 'Estado Licencia' in df_filtered.columns and df_filtered['Estado Licencia'].notna().any():
-            df_lic_summary = df_filtered['Estado Licencia'].value_counts().reset_index()
-            df_lic_summary.columns = ['Estado', 'Cantidad']
-            
-            fig_lic = px.bar(
-                df_lic_summary,
-                x='Estado',
-                y='Cantidad',
-                color='Estado',
-                color_discrete_map={'Activa': '#2ca02c', 'Inactiva': '#d62728', 'Vencida': '#ff7f0e'},
-                title="Estado General de las Licencias"
-            )
-            st.plotly_chart(fig_lic, use_container_width=True)
-        else:
-            st.info("No hay información de licencias vinculadas.")
-
-    # Gráfico 4: Evolución por Familia de Producto
-    with g4:
-        st.subheader("🚜 Equipos por Familia de Producto")
-        if 'Product Family' in df_filtered.columns:
-            df_fam = df_filtered['Product Family'].value_counts().reset_index()
-            df_fam.columns = ['Familia de Producto', 'Cantidad']
-            
-            fig_fam = px.bar(
-                df_fam,
-                x='Cantidad',
-                y='Familia de Producto',
-                orientation='h',
-                color='Cantidad',
-                color_continuous_scale='Viridis',
-                title="Top Familias de Maquinarias"
-            )
-            fig_fam.update_layout(yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig_fam, use_container_width=True)
-
-    # --- TABLA EXPLORADORA DETALLADA ---
-    st.markdown("---")
-    st.subheader("🔍 Explorador Detallado de la Base")
-    
-    # Buscador de texto libre
-    busqueda = st.text_input("🔎 Buscar por PIN, Cliente (Org Name) o Monitor:", "")
-    if busqueda:
-        mask = (
-            df_filtered['Machine Pin'].astype(str).str.contains(busqueda, case=False, na=False) |
-            df_filtered['Org Name'].astype(str).str.contains(busqueda, case=False, na=False) |
-            df_filtered['Número de Serie Monitor'].astype(str).str.contains(busqueda, case=False, na=False)
+        
+        val_promedio_str = f"{promedio_autotrac:.1f}%" if pd.notna(promedio_autotrac) else "N/A"
+        kpi_col2.metric(
+            label="📈 % de Uso Promedio AutoTrac",
+            value=val_promedio_str,
+            help="Promedio de uso calculado únicamente sobre los registros con datos válidos (excluyendo campos nulos)."
         )
-        df_display = df_filtered[mask]
-    else:
-        df_display = df_filtered
+        
+        kpi_col3.metric(
+            label="📋 Total Registros Filtrados",
+            value=len(df_filtered)
+        )
 
-    st.dataframe(df_display, use_container_width=True)
+        st.markdown("---")
 
-    # Exportación rápida
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_display.to_excel(writer, index=False, sheet_name='Base_Filtrada')
-    
-    st.download_button(
-        label="📥 Descargar Vista Actual en Excel",
-        data=output.getvalue(),
-        file_name="CONCI_Reporte_Filtrado_Dashboard.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # --- TABLA DEL FINAL CON BUSCADOR ---
+        st.subheader("🔍 Tabla Detallada de Equipos")
+        
+        busqueda = st.text_input("🔎 Buscar por Machine Pin, Org Name o Número de Serie Monitor:", "")
+        
+        if busqueda:
+            mask_search = (
+                df_filtered['Machine Pin'].astype(str).str.contains(busqueda, case=False, na=False) |
+                df_filtered['Org Name'].astype(str).str.contains(busqueda, case=False, na=False) |
+                df_filtered['Número de Serie Monitor'].astype(str).str.contains(busqueda, case=False, na=False)
+            )
+            df_display = df_filtered[mask_search]
+        else:
+            df_display = df_filtered
+
+        st.dataframe(df_display, use_container_width=True)
+        st.caption(f"Mostrando {len(df_display)} registros de un total de {len(df_filtered)}.")
+
+    # ==========================================
+    # PESTAÑA 2: PRÓXIMAS TECNOLOGÍAS
+    # ==========================================
+    with tab_proximas:
+        st.info("🚧 En los siguientes pasos iremos agregando los análisis para RowSense, AutoPath, Machine Sync, etc.")
