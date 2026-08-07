@@ -12,78 +12,136 @@ st.set_page_config(
     layout="wide"
 )
 
+# Nombre fijo del archivo consolidado en el repositorio de GitHub
+NOMBRE_ARCHIVO_GITHUB = "data/base_datos_consolidada.xlsx"
+
 st.title("🚜 Depurador y Consolidador de Maquinarias & Tecnología")
 st.markdown("""
-Esta herramienta procesa el reporte de maquinarias, consolida los registros, 
-cruza los datos con los archivos de **Emparejamientos**, **Licencias** y **Organizaciones/Sucursales**, 
-y permite **completar manualmente** los equipos que registraron uso de tecnología pero no tienen identificador.
+Esta herramienta procesa el reporte semanal de maquinarias, consolida los registros, 
+cruza los datos con **Emparejamientos**, **Licencias** y **Organizaciones/Sucursales**, 
+y los **acumula semana a semana** en la base de datos de GitHub.
 """)
 
-# --- FUNCIÓN PARA SUBIR ARCHIVO A GITHUB VIA API ---
-def subir_a_github(file_bytes, file_name):
+# --- FUNCIÓN PARA OBTENER LA BASE EXISTENTE DE GITHUB ---
+@st.cache_data(ttl=60) # Guarda en caché por 1 min para no saturar la API
+def consultar_base_github():
     try:
-        # Cargar credenciales desde st.secrets
         gh_config = st.secrets["github"]
         token = gh_config["token"]
         repo = gh_config["repo"]
         branch = gh_config.get("branch", "main")
         
-        # Ruta donde se guardará en el repositorio (ej: data/nombre_archivo.xlsx)
-        path = f"data/{file_name}"
-        url = f"https://api.github.com/repos/{repo}/contents/{path}"
-        
+        url = f"https://api.github.com/repos/{repo}/contents/{NOMBRE_ARCHIVO_GITHUB}?ref={branch}"
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.v3+json"
         }
         
-        # 1. Verificar si el archivo ya existe en GitHub para obtener su SHA (requerido para actualizar)
+        res = requests.get(url, headers=headers)
+        if res.status_code == 200:
+            content_b64 = res.json()["content"]
+            file_bytes = base64.b64decode(content_b64)
+            df_existente = pd.read_excel(io.BytesIO(file_bytes))
+            
+            # Obtener último período registrado
+            if 'Fecha Fin' in df_existente.columns and 'Fecha Inicio' in df_existente.columns:
+                df_existente['Fecha Fin Temp'] = pd.to_datetime(df_existente['Fecha Fin'], errors='coerce')
+                df_existente['Fecha Inicio Temp'] = pd.to_datetime(df_existente['Fecha Inicio'], errors='coerce')
+                
+                ultimo_fin = df_existente['Fecha Fin Temp'].max()
+                ultimo_inicio = df_existente[df_existente['Fecha Fin Temp'] == ultimo_fin]['Fecha Inicio Temp'].min()
+                
+                # Limpiar columnas temporales
+                df_existente.drop(columns=['Fecha Fin Temp', 'Fecha Inicio Temp'], inplace=True)
+                
+                str_inicio = ultimo_inicio.strftime('%Y-%m-%d') if pd.notna(ultimo_inicio) else "N/A"
+                str_fin = ultimo_fin.strftime('%Y-%m-%d') if pd.notna(ultimo_fin) else "N/A"
+                
+                return df_existente, str_inicio, str_fin
+            return df_existente, "Desconocido", "Desconocido"
+        else:
+            return None, None, None
+    except Exception:
+        return None, None, None
+
+
+# --- FUNCIÓN PARA SUBIR/SOBREESCRIBIR EN GITHUB VIA API ---
+def subir_a_github(file_bytes, mensaje_commit):
+    try:
+        gh_config = st.secrets["github"]
+        token = gh_config["token"]
+        repo = gh_config["repo"]
+        branch = gh_config.get("branch", "main")
+        
+        url = f"https://api.github.com/repos/{repo}/contents/{NOMBRE_ARCHIVO_GITHUB}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        # Verificar si el archivo ya existe para obtener su SHA
         res_get = requests.get(f"{url}?ref={branch}", headers=headers)
         sha = res_get.json().get("sha") if res_get.status_code == 200 else None
         
-        # 2. Convertir el contenido del archivo Excel a Base64
         content_b64 = base64.b64encode(file_bytes).decode('utf-8')
         
-        # 3. Preparar el payload de la solicitud PUT
         payload = {
-            "message": f"🤖 Auto-update base de datos depurada: {file_name}",
+            "message": mensaje_commit,
             "content": content_b64,
             "branch": branch
         }
         if sha:
-            payload["sha"] = sha  # Si existe, actualiza el archivo existente
+            payload["sha"] = sha
             
-        # 4. Enviar a GitHub
         res_put = requests.put(url, headers=headers, json=payload)
         
         if res_put.status_code in [200, 201]:
-            return True, f"✅ Archivo subido con éxito a GitHub en `{repo}/{path}`"
+            st.cache_data.clear() # Limpiar caché para refrescar la lectura
+            return True, f"✅ Base de datos actualizada en GitHub (`{repo}/{NOMBRE_ARCHIVO_GITHUB}`)"
         else:
             return False, f"❌ Error de GitHub ({res_put.status_code}): {res_put.json().get('message')}"
             
     except KeyError:
-        return False, "⚠️ No se encontraron las credenciales de GitHub en `st.secrets`. Revisa tu archivo `.streamlit/secrets.toml`."
+        return False, "⚠️ Falta la configuración de GitHub en `st.secrets`."
     except Exception as e:
-        return False, f"❌ Error inesperado al conectar con GitHub: {e}"
+        return False, f"❌ Error al conectar con GitHub: {e}"
+
+
+# --- ESTADO DE LA BASE DE DATOS EN GITHUB (PANEL SUPERIOR) ---
+df_historico, ult_inicio, ult_fin = consultar_base_github()
+
+st.sidebar.markdown("---")
+st.sidebar.header("📌 Estado en GitHub")
+
+if df_historico is not None:
+    st.info(f"""
+    📅 **Último período en GitHub:**  
+    **Desde:** `{ult_inicio}`  
+    **Hasta:** `{ult_fin}`  
+    
+    📊 **Total registros acumulados:** {len(df_historico)} filas
+    """)
+else:
+    st.warning("⚠️ No se encontró una base acumulada en GitHub. La primera subida creará el archivo inicial.")
 
 
 # --- INICIALIZAR VARIABLES EN SESIÓN ---
 if 'df_procesado' not in st.session_state:
     st.session_state['df_procesado'] = None
 
-# --- SECCIÓN DE PARÁMETROS Y CARGA ---
-st.sidebar.header("📅 Período de Análisis")
-fecha_inicio = st.sidebar.date_input("Fecha de Inicio", datetime.date(2025, 1, 1))
+# --- SECCIÓN DE PARÁMETROS Y CARGA NUEVA SEMANA ---
+st.sidebar.header("📅 Período de la Nueva Semana")
+fecha_inicio = st.sidebar.date_input("Fecha de Inicio", datetime.date.today() - datetime.timedelta(days=7))
 fecha_fin = st.sidebar.date_input("Fecha de Fin", datetime.date.today())
 
-st.sidebar.header("📂 Carga de Archivos")
+st.sidebar.header("📂 Carga de Archivos de la Semana")
 uploaded_file_principal = st.sidebar.file_uploader("1. Machine Report Tech (.xlsx)", type=["xlsx"])
 uploaded_file_emparejamientos = st.sidebar.file_uploader("2. Archivo Emparejamientos (.xlsx)", type=["xlsx"])
 uploaded_file_licencias = st.sidebar.file_uploader("3. Archivo Licencias (.xlsx)", type=["xlsx"])
 uploaded_file_orgs = st.sidebar.file_uploader("4. Base Orgs & Sucursales (.csv)", type=["csv"])
 
 if uploaded_file_principal is not None:
-    if st.sidebar.button("🚀 Procesar, Limpiar y Emparejar", type="primary"):
+    if st.sidebar.button("🚀 Procesar Semana Actual", type="primary"):
         df_raw = pd.read_excel(uploaded_file_principal)
         
         # PASO 1: Eliminar filas vacías
@@ -94,7 +152,7 @@ if uploaded_file_principal is not None:
         )
         df_filtered = df_raw[~mask_empty].copy()
         
-        # PASO 2: Unificación de filas
+        # PASO 2: Unificación de filas dentro del reporte semanal
         df_filtered['Model Year_fill'] = df_filtered['Model Year'].fillna(-1)
         df_filtered['Product Family_fill'] = df_filtered['Product Family'].fillna('DESCONOCIDO')
         
@@ -118,7 +176,7 @@ if uploaded_file_principal is not None:
             .drop(columns=['Model Year_fill', 'Product Family_fill'], errors='ignore')
         )
         
-        # PASO 3: Insertar Fechas
+        # PASO 3: Insertar Fechas de la semana procesada
         if 'Dealer' in df_cleaned.columns:
             dealer_idx = df_cleaned.columns.get_loc('Dealer') + 1
             df_cleaned.insert(dealer_idx, 'Fecha Inicio', fecha_inicio.strftime('%Y-%m-%d'))
@@ -182,7 +240,7 @@ if st.session_state['df_procesado'] is not None:
     mask_manual = df_base['Machine Pin'].isna() & df_base['Número de Serie Monitor'].isna() & has_tech_data
     
     if mask_manual.any():
-        st.warning("⚠️ **Atención:** Completa los `Machine Pin` o `Número de Serie Monitor` de las siguientes máquinas. Es obligatorio para cruzar luego las licencias.")
+        st.warning("⚠️ **Atención:** Completa los `Machine Pin` o `Número de Serie Monitor` pendientes de esta semana:")
         
         df_ok = df_base[~mask_manual]
         df_manual = df_base[mask_manual]
@@ -198,10 +256,10 @@ if st.session_state['df_procesado'] is not None:
             key="editor_manual"
         )
         
-        df_final = pd.concat([df_ok, edited_manual], ignore_index=True)
+        df_final_semana = pd.concat([df_ok, edited_manual], ignore_index=True)
     else:
-        st.success("✅ Base de datos procesada exitosamente. No hay registros pendientes de revisión manual.")
-        df_final = df_base
+        st.success("✅ Semana procesada exitosamente sin inconsistencias pendientes.")
+        df_final_semana = df_base
         
     # PASO 6: CRUCE DE LICENCIAS
     if uploaded_file_licencias is not None:
@@ -209,15 +267,15 @@ if st.session_state['df_procesado'] is not None:
             df_lic = pd.read_excel(uploaded_file_licencias)
             df_lic = df_lic[df_lic['Tipo'].astype(str).str.strip().str.lower() != 'receptor de posición'].copy()
             
-            df_final['temp_org'] = df_final['Org Name'].astype(str).str.strip().str.lower()
-            df_final['temp_pin'] = df_final['Machine Pin'].astype(str).str.strip().str.lower()
-            df_final['temp_mon'] = df_final['Número de Serie Monitor'].astype(str).str.strip().str.lower()
+            df_final_semana['temp_org'] = df_final_semana['Org Name'].astype(str).str.strip().str.lower()
+            df_final_semana['temp_pin'] = df_final_semana['Machine Pin'].astype(str).str.strip().str.lower()
+            df_final_semana['temp_mon'] = df_final_semana['Número de Serie Monitor'].astype(str).str.strip().str.lower()
             
             df_lic['temp_org'] = df_lic['Nombre del cliente'].astype(str).str.strip().str.lower()
             df_lic['temp_serie'] = df_lic['N.° de serie'].astype(str).str.strip().str.lower()
             
             records = []
-            for idx, row in df_final.iterrows():
+            for idx, row in df_final_semana.iterrows():
                 m_org = df_lic['temp_org'] == row['temp_org']
                 m_serie = (df_lic['temp_serie'] == row['temp_pin']) | (df_lic['temp_serie'] == row['temp_mon'])
                 
@@ -243,13 +301,12 @@ if st.session_state['df_procesado'] is not None:
                         new_row['Fecha de vencimiento de pedido'] = m_row['Fecha de vencimiento de pedido']
                         records.append(new_row)
                         
-            df_final = pd.DataFrame(records)
-            df_final.drop(columns=['temp_org', 'temp_pin', 'temp_mon'], inplace=True, errors='ignore')
-            st.success("✅ Archivo de Licencias cruzado correctamente.")
+            df_final_semana = pd.DataFrame(records)
+            df_final_semana.drop(columns=['temp_org', 'temp_pin', 'temp_mon'], inplace=True, errors='ignore')
         except Exception as e:
             st.error(f"Error procesando las licencias: {e}")
 
-    # PASO 7: CRUCE DE SUCURSAL DESDE EL CSV
+    # PASO 7: CRUCE DE SUCURSAL
     if uploaded_file_orgs is not None:
         try:
             df_orgs_raw = pd.read_csv(uploaded_file_orgs)
@@ -272,67 +329,63 @@ if st.session_state['df_procesado'] is not None:
             
             col_org_id = None
             for candidate in ['Org Id', 'Org ID', 'ORG ID', 'Org id']:
-                if candidate in df_final.columns:
+                if candidate in df_final_semana.columns:
                     col_org_id = candidate
                     break
                     
             if col_org_id:
-                df_final['temp_org_key'] = df_final[col_org_id].apply(clean_org_id)
-                df_final['Sucursal'] = df_final['temp_org_key'].map(mapping_sucursal)
-                df_final.drop(columns=['temp_org_key'], inplace=True, errors='ignore')
-                st.success("✅ Sucursales vinculadas correctamente.")
-            else:
-                st.warning("No se encontró la columna de Org ID en la base depurada para realizar el cruce.")
+                df_final_semana['temp_org_key'] = df_final_semana[col_org_id].apply(clean_org_id)
+                df_final_semana['Sucursal'] = df_final_semana['temp_org_key'].map(mapping_sucursal)
+                df_final_semana.drop(columns=['temp_org_key'], inplace=True, errors='ignore')
         except Exception as e:
-            st.error(f"Error procesando el archivo de Organizaciones/Sucursales: {e}")
+            st.error(f"Error procesando sucursales: {e}")
 
-    # --- MÉTRICAS ---
-    st.subheader("📈 Resultado Final")
-    r1, r2, r3, r4, r5 = st.columns(5)
-    r1.metric("Filas Totales", len(df_final))
+    # --- UNIFICACIÓN / CONCATENACIÓN CON LA BASE HISTÓRICA ---
+    if df_historico is not None:
+        # Unir base histórica + semana actual y eliminar duplicados exactos si los hay
+        df_acumulado = pd.concat([df_historico, df_final_semana], ignore_index=True)
+        df_acumulado.drop_duplicates(inplace=True)
+    else:
+        df_acumulado = df_final_semana.copy()
+
+    # --- MÉTRICAS Y RESUMEN ---
+    st.subheader("📈 Resumen de la Consolidación")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Filas Nuevas (Semana)", len(df_final_semana))
+    m2.metric("Total Acumulado Historico", len(df_acumulado))
+    m3.metric("Período Procesado", f"{fecha_inicio} a {fecha_fin}")
+    m4.metric("Máquinas Nuevas con PIN", int(df_final_semana['Machine Pin'].notna().sum()))
     
-    if 'Número de Serie Monitor' in df_final.columns:
-        monitores = df_final['Número de Serie Monitor'].notna().sum()
-        r2.metric("Monitores Emparejados", int(monitores))
-        
-    r3.metric("Machine Pins", int(df_final['Machine Pin'].notna().sum()))
+    st.subheader("📋 Vista Previa de la Base Acumulada")
+    st.dataframe(df_acumulado.tail(20), use_container_width=True)
+    st.caption("Mostrando los últimos 20 registros acumulados.")
     
-    if 'Número de licencia' in df_final.columns:
-        licencias_match = df_final['Número de licencia'].notna().sum()
-        r4.metric("Licencias Cruzadas", int(licencias_match))
-        
-    if 'Sucursal' in df_final.columns:
-        sucursales_match = df_final['Sucursal'].notna().sum()
-        r5.metric("Sucursales Asignadas", int(sucursales_match))
-    
-    st.subheader("📋 Base de Datos Resultante")
-    st.dataframe(df_final, use_container_width=True)
-    
-    # --- PREPARACIÓN DEL ARCHIVO EXCEL EN MEMORIA ---
+    # --- PREPARACIÓN DEL EXCEL PARALELO ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_final.to_excel(writer, index=False, sheet_name='Base_Consolidada')
-    excel_bytes = output.getvalue()
-    file_name_output = f"CONCI_Machine_Report_Tech_Final_{fecha_inicio}_{fecha_fin}.xlsx"
+        df_acumulado.to_excel(writer, index=False, sheet_name='Base_Consolidada')
+    excel_bytes_acumulado = output.getvalue()
 
-    # --- ACCIONES DE DESCARGA Y CARGA A GITHUB ---
+    # --- BOTONES DE ACCIÓN ---
     st.subheader("🚀 Exportación e Integración")
     c1, c2 = st.columns([1, 1])
     
     with c1:
         st.download_button(
-            label="📥 Descargar Base Consolidada (.xlsx)",
-            data=excel_bytes,
-            file_name=file_name_output,
+            label="📥 Descargar Copia Local Acumulada (.xlsx)",
+            data=excel_bytes_acumulado,
+            file_name=f"CONCI_Base_Acumulada_{fecha_fin}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
         
     with c2:
-        if st.button("📤 Cargar Base de Datos a GitHub", type="primary", use_container_width=True):
-            with st.spinner("Subiendo archivo a GitHub..."):
-                exito, mensaje = subir_a_github(excel_bytes, file_name_output)
+        msg_commit = f"🤖 Carga semanal: {fecha_inicio} al {fecha_fin} ({len(df_final_semana)} filas)"
+        if st.button("📤 Anexar y Guardar en GitHub", type="primary", use_container_width=True):
+            with st.spinner("Actualizando base histórica en GitHub..."):
+                exito, mensaje = subir_a_github(excel_bytes_acumulado, msg_commit)
                 if exito:
                     st.success(mensaje)
+                    st.rerun() # Recargar la app para actualizar las métricas
                 else:
                     st.error(mensaje)
