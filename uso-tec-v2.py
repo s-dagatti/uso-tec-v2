@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import datetime
 
 # Configuración de la página
 st.set_page_config(
@@ -11,9 +12,14 @@ st.set_page_config(
 
 st.title("🚜 Depurador y Consolidador de Maquinarias & Tecnología")
 st.markdown("""
-Esta herramienta procesa el reporte de maquinarias (`Machine Report Tech`), elimina registros vacíos 
-y **unifica filas duplicadas** para consolidar el PIN de la máquina con su pantalla y métricas de tecnología.
+Esta herramienta procesa el reporte de maquinarias (`Machine Report Tech`), elimina registros vacíos, 
+**unifica filas duplicadas** para consolidar el PIN de la máquina con su pantalla y asigna el **período de análisis**.
 """)
+
+# --- SECCIÓN DE PARÁMETROS (FECHAS DE ANÁLISIS) ---
+st.sidebar.header("📅 Período de Análisis")
+fecha_inicio = st.sidebar.date_input("Fecha de Inicio", datetime.date(2025, 1, 1))
+fecha_fin = st.sidebar.date_input("Fecha de Fin", datetime.date.today())
 
 # Cargar archivo Excel
 uploaded_file = st.file_uploader("Cargar archivo Excel (.xlsx)", type=["xlsx"])
@@ -41,7 +47,6 @@ if uploaded_file is not None:
         df_filtered = df_raw[~mask_empty].copy()
         
         # PASO 2: Unificación de filas que corresponden a la misma máquina
-        # Agrupamos por Cliente (Org Id / Org Name), Familia de producto y Año
         df_filtered['Model Year_fill'] = df_filtered['Model Year'].fillna(-1)
         df_filtered['Product Family_fill'] = df_filtered['Product Family'].fillna('DESCONOCIDO')
         
@@ -51,7 +56,6 @@ if uploaded_file is not None:
             if len(group) == 1:
                 return group.iloc[0]
             
-            # Tomamos la primera fila como plantilla y completamos vacíos con las otras filas
             combined = group.iloc[0].copy()
             for col in group.columns:
                 if pd.isna(combined[col]):
@@ -67,7 +71,16 @@ if uploaded_file is not None:
             .drop(columns=['Model Year_fill', 'Product Family_fill'], errors='ignore')
         )
         
-        st.success("¡Base de datos procesada y unificada con éxito!")
+        # PASO 3: Insertar las columnas de Fechas justo después de 'Dealer'
+        if 'Dealer' in df_cleaned.columns:
+            dealer_idx = df_cleaned.columns.get_loc('Dealer') + 1
+            df_cleaned.insert(dealer_idx, 'Fecha Inicio', fecha_inicio.strftime('%Y-%m-%d'))
+            df_cleaned.insert(dealer_idx + 1, 'Fecha Fin', fecha_fin.strftime('%Y-%m-%d'))
+        else:
+            df_cleaned['Fecha Inicio'] = fecha_inicio.strftime('%Y-%m-%d')
+            df_cleaned['Fecha Fin'] = fecha_fin.strftime('%Y-%m-%d')
+            
+        st.success("¡Base de datos procesada, unificada y con fechas asignadas exitosamente!")
         
         # Métricas resultantes
         st.subheader("📈 Resultado de la Consolidación")
@@ -88,8 +101,8 @@ if uploaded_file is not None:
         excel_data = output.getvalue()
         
         st.download_button(
-            label="📥 Descargar Base Depurada (.xlsx)",
+            label="📥 Descargar Base Depurada con Fechas (.xlsx)",
             data=excel_data,
-            file_name="CONCI_Machine_Report_Tech_Limpio.xlsx",
+            file_name=f"CONCI_Machine_Report_Tech_{fecha_inicio}_{fecha_fin}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
