@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import datetime
 
 # Configuración del Dashboard
 st.set_page_config(page_title="Carga de Información - Conci", layout="wide")
@@ -28,6 +29,25 @@ def procesar_analizador(df):
         df[col] = pd.to_numeric(df[col].astype(str).str.replace('%', ''), errors='coerce')
         
     return df
+
+def calcular_estado_licencia(row):
+    """
+    Determina el estado de la licencia: 'No tiene', 'Vencida' o 'Vigente'.
+    """
+    licencia = row.get('Licencia Gen4')
+    if pd.isna(licencia) or str(licencia).strip() in ['', '-']:
+        return "No tiene"
+    
+    fin_dt = row.get('Fin_Licencia_DT')
+    if pd.isna(fin_dt):
+        # Si tiene licencia nombrada pero sin fecha de expiración explícita
+        return "Vigente"
+    
+    today = pd.Timestamp.now().normalize()
+    if fin_dt < today:
+        return "Vencida"
+    else:
+        return "Vigente"
 
 # --- LÓGICA PRINCIPAL ---
 if uploaded_file_analizador is not None:
@@ -83,7 +103,7 @@ if uploaded_file_analizador is not None:
             df_gen4 = df_gen4.sort_values('Fecha_Inicio_DT', ascending=True)
             df_gen4_unique = df_gen4.drop_duplicates(subset=['Tornillería'], keep='last')
             
-            # Seleccionar y renombrar columnas requeridas (E, F, G, H y Tornillería)
+            # Seleccionar y renombrar columnas requeridas
             df_licencias_gen4 = df_gen4_unique[[
                 'Tornillería',
                 'Producto',
@@ -108,17 +128,33 @@ if uploaded_file_analizador is not None:
             
             if 'Tornillería' in df_final.columns:
                 df_final = df_final.drop(columns=['Tornillería'])
+
+            # 4. CÁLCULO DEL ESTADO DE LA LICENCIA
+            df_final['Fin_Licencia_DT'] = pd.to_datetime(df_final['Fin Licencia Gen4'], format='%d/%m/%Y', errors='coerce')
+            df_final['Estado Licencia Gen4'] = df_final.apply(calcular_estado_licencia, axis=1)
+            
+            # Eliminamos la columna auxiliar de fecha datetime
+            df_final = df_final.drop(columns=['Fin_Licencia_DT'])
+
         elif uploaded_file_activaciones is None:
             st.sidebar.warning("⚠️ Falta cargar el archivo CSV de activaciones.")
 
         # --- UI: RESULTADOS ---
         st.success("✅ Datos consolidados con éxito.")
         
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Filas Totales", len(df_final))
+        # Métricas resumidas
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Máquinas Totales", len(df_final))
         col2.metric("Columnas Resultantes", len(df_final.columns))
-        if 'Licencia Gen4' in df_final.columns:
-            col3.metric("Monitores Gen4 con Licencia", df_final['Licencia Gen4'].notna().sum())
+        
+        if 'Estado Licencia Gen4' in df_final.columns:
+            cant_vigentes = (df_final['Estado Licencia Gen4'] == 'Vigente').sum()
+            cant_vencidas = (df_final['Estado Licencia Gen4'] == 'Vencida').sum()
+            cant_no_tiene = (df_final['Estado Licencia Gen4'] == 'No tiene').sum()
+            
+            col3.metric("🟢 Vigentes", cant_vigentes)
+            col4.metric("🔴 Vencidas", cant_vencidas)
+            col5.metric("⚪ No tiene", cant_no_tiene)
 
         st.subheader("Vista previa de los datos consolidados")
         st.dataframe(df_final, use_container_width=True)
