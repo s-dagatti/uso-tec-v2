@@ -1,30 +1,63 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import datetime
 
 # Configuración del Dashboard
 st.set_page_config(page_title="Carga de Información - Conci", layout="wide")
 
 st.title("📂 Tablero de Carga de Información")
-st.markdown("Sube los archivos para procesar, limpiar y consolidar los datos de máquinas, monitores y licencias.")
+st.markdown("Sube los archivos para procesar, limpiar y consolidar los datos de máquinas, monitores y licencias (Gen 4 y Gen 5).")
 
 # --- SIDEBAR: Carga de archivos ---
 st.sidebar.header("📁 Carga de Archivos")
 uploaded_file_analizador = st.sidebar.file_uploader("1. Archivo Analizador de Máquina", type=["xlsx"])
 uploaded_file_maquinas = st.sidebar.file_uploader("2. Archivo de Máquinas (Emparejamientos)", type=["xlsx"])
-uploaded_file_activaciones = st.sidebar.file_uploader("3. Control de Activaciones (CSV)", type=["csv"])
+uploaded_file_activaciones = st.sidebar.file_uploader("3. Control de Activaciones Gen 4 (CSV)", type=["csv"])
+uploaded_file_gen5 = st.sidebar.file_uploader("4. Licencias Gen 5 (Excel)", type=["xlsx"])
+
+# --- FUNCIONES AUXILIARES ---
+spanish_months = {
+    'sept': 'Sep', 'septiembre': 'Sep',
+    'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr',
+    'may': 'May', 'jun': 'Jun', 'jul': 'Jul', 'ago': 'Aug',
+    'sep': 'Sep', 'oct': 'Oct', 'nov': 'Nov', 'dic': 'Dec'
+}
+
+def parse_spanish_date(date_str):
+    """Convierte cadenas de fecha en español (ej: '21 jun 2026') a pd.Timestamp."""
+    if pd.isna(date_str) or str(date_str).strip() in ['---', '-', '']:
+        return pd.NaT
+    s = str(date_str).strip().lower()
+    for es in sorted(spanish_months.keys(), key=len, reverse=True):
+        en = spanish_months[es]
+        s = s.replace(es, en)
+    return pd.to_datetime(s, format='%d %b %Y', errors='coerce')
+
+def calcular_duracion_str(inicio_dt, fin_dt):
+    """Calcula la duración amigable entre dos fechas en formato de meses o años."""
+    if pd.isna(inicio_dt) or pd.isna(fin_dt):
+        return "-"
+    days = (fin_dt - inicio_dt).days
+    months = round(days / 30.4375)
+    if months >= 12:
+        years = months // 12
+        rem_months = months % 12
+        if rem_months == 0:
+            return f"{years} año" if years == 1 else f"{years} años"
+        else:
+            return f"{months} Meses"
+    else:
+        return f"{months} Meses"
 
 def procesar_analizador(df):
     """
     Limpia el dataframe de Analizador: elimina columnas 'Unidad' y convierte % a numérico.
     """
-    # 1. Eliminar columnas 'Unidad'
     cols_to_drop = [c for c in df.columns if 'unidad' in str(c).lower()]
     df = df.drop(columns=cols_to_drop)
     
-    # 2. Convertir columnas porcentuales a numéricas
     cols_porcentuales = [c for c in df.columns if 'activo' in str(c).lower() or 'activado' in str(c).lower()]
-    
     for col in cols_porcentuales:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace('%', ''), errors='coerce')
         
@@ -34,13 +67,16 @@ def calcular_estado_licencia(row):
     """
     Determina el estado de la licencia: 'No tiene', 'Vencida' o 'Vigente'.
     """
-    licencia = row.get('Licencia Gen4')
-    if pd.isna(licencia) or str(licencia).strip() in ['', '-']:
+    licencia = row.get('Licencia')
+    if pd.isna(licencia) or str(licencia).strip() in ['', '-', 'nan']:
         return "No tiene"
     
-    fin_dt = row.get('Fin_Licencia_DT')
+    fin_str = str(row.get('Fin Licencia', '')).strip()
+    if pd.isna(fin_str) or fin_str in ['', '-', 'nan']:
+        return "Vigente"
+    
+    fin_dt = pd.to_datetime(fin_str, format='%d/%m/%Y', errors='coerce')
     if pd.isna(fin_dt):
-        # Si tiene licencia nombrada pero sin fecha de expiración explícita
         return "Vigente"
     
     today = pd.Timestamp.now().normalize()
@@ -103,7 +139,7 @@ if uploaded_file_analizador is not None:
             df_gen4 = df_gen4.sort_values('Fecha_Inicio_DT', ascending=True)
             df_gen4_unique = df_gen4.drop_duplicates(subset=['Tornillería'], keep='last')
             
-            # Seleccionar y renombrar columnas requeridas
+            # Seleccionar y renombrar columnas
             df_licencias_gen4 = df_gen4_unique[[
                 'Tornillería',
                 'Producto',
@@ -111,10 +147,10 @@ if uploaded_file_analizador is not None:
                 'Fecha de inicio',
                 'Fecha final'
             ]].rename(columns={
-                'Producto': 'Licencia Gen4',
-                'Duración': 'Duración Licencia Gen4',
-                'Fecha de inicio': 'Comienzo Licencia Gen4',
-                'Fecha final': 'Fin Licencia Gen4'
+                'Producto': 'Licencia',
+                'Duración': 'Duración Licencia',
+                'Fecha de inicio': 'Comienzo Licencia',
+                'Fecha final': 'Fin Licencia'
             })
             
             # Cruce 2: Hardware Monitor vs Tornillería
@@ -129,15 +165,58 @@ if uploaded_file_analizador is not None:
             if 'Tornillería' in df_final.columns:
                 df_final = df_final.drop(columns=['Tornillería'])
 
-            # 4. CÁLCULO DEL ESTADO DE LA LICENCIA
-            df_final['Fin_Licencia_DT'] = pd.to_datetime(df_final['Fin Licencia Gen4'], format='%d/%m/%Y', errors='coerce')
-            df_final['Estado Licencia Gen4'] = df_final.apply(calcular_estado_licencia, axis=1)
-            
-            # Eliminamos la columna auxiliar de fecha datetime
-            df_final = df_final.drop(columns=['Fin_Licencia_DT'])
-
         elif uploaded_file_activaciones is None:
-            st.sidebar.warning("⚠️ Falta cargar el archivo CSV de activaciones.")
+            st.sidebar.warning("⚠️ Falta cargar el archivo CSV de activaciones Gen 4.")
+
+        # Asegurar existencia de columnas de licencias
+        for col in ['Licencia', 'Duración Licencia', 'Comienzo Licencia', 'Fin Licencia']:
+            if col not in df_final.columns:
+                df_final[col] = np.nan
+
+        # 4. CRUCE CON CUARTO ARCHIVO (LICENCIAS GEN 5)
+        if uploaded_file_gen5 is not None:
+            df_gen5 = pd.read_excel(uploaded_file_gen5)
+            
+            # Parsear fechas en formato español
+            df_gen5['Inicio_DT'] = df_gen5['Fecha de inicio'].apply(parse_spanish_date)
+            df_gen5['Fin_DT'] = df_gen5['Fecha de terminación'].apply(parse_spanish_date)
+            df_gen5['Duración_Calc'] = df_gen5.apply(lambda r: calcular_duracion_str(r['Inicio_DT'], r['Fin_DT']), axis=1)
+            
+            df_gen5['Comienzo_Str'] = df_gen5['Inicio_DT'].dt.strftime('%d/%m/%Y').fillna('-')
+            df_gen5['Fin_Str'] = df_gen5['Fin_DT'].dt.strftime('%d/%m/%Y').fillna('-')
+            
+            # Limpiar número de serie y tomar el registro más reciente por número de serie
+            df_gen5['N.° de serie'] = df_gen5['N.° de serie'].astype(str).str.strip()
+            df_gen5_sorted = df_gen5.sort_values('Inicio_DT', ascending=True)
+            df_gen5_unique = df_gen5_sorted.drop_duplicates(subset=['N.° de serie'], keep='last')
+            
+            # Mapas de búsqueda por N.° de serie
+            map_licencia = df_gen5_unique.set_index('N.° de serie')['Nombre de licencia'].to_dict()
+            map_duracion = df_gen5_unique.set_index('N.° de serie')['Duración_Calc'].to_dict()
+            map_comienzo = df_gen5_unique.set_index('N.° de serie')['Comienzo_Str'].to_dict()
+            map_fin = df_gen5_unique.set_index('N.° de serie')['Fin_Str'].to_dict()
+            
+            def buscar_gen5(row, field_map):
+                s_maq = str(row.get('Número de serie de la máquina', '')).strip()
+                s_mon = str(row.get('Hardware Monitor', '')).strip()
+                if s_maq in field_map and s_maq not in ['', 'nan', 'None']:
+                    return field_map[s_maq]
+                elif s_mon in field_map and s_mon not in ['', 'nan', 'None']:
+                    return field_map[s_mon]
+                return np.nan
+
+            # Asignar los datos Gen 5 a los registros que no tengan licencia Gen 4 previa
+            for col, field_map in [
+                ('Licencia', map_licencia),
+                ('Duración Licencia', map_duracion),
+                ('Comienzo Licencia', map_comienzo),
+                ('Fin Licencia', map_fin)
+            ]:
+                g5_vals = df_final.apply(lambda r: buscar_gen5(r, field_map), axis=1)
+                df_final[col] = df_final[col].fillna(g5_vals)
+
+        # 5. CÁLCULO DEL ESTADO FINAL DE LA LICENCIA
+        df_final['Estado Licencia'] = df_final.apply(calcular_estado_licencia, axis=1)
 
         # --- UI: RESULTADOS ---
         st.success("✅ Datos consolidados con éxito.")
@@ -147,14 +226,13 @@ if uploaded_file_analizador is not None:
         col1.metric("Máquinas Totales", len(df_final))
         col2.metric("Columnas Resultantes", len(df_final.columns))
         
-        if 'Estado Licencia Gen4' in df_final.columns:
-            cant_vigentes = (df_final['Estado Licencia Gen4'] == 'Vigente').sum()
-            cant_vencidas = (df_final['Estado Licencia Gen4'] == 'Vencida').sum()
-            cant_no_tiene = (df_final['Estado Licencia Gen4'] == 'No tiene').sum()
-            
-            col3.metric("🟢 Vigentes", cant_vigentes)
-            col4.metric("🔴 Vencidas", cant_vencidas)
-            col5.metric("⚪ No tiene", cant_no_tiene)
+        cant_vigentes = (df_final['Estado Licencia'] == 'Vigente').sum()
+        cant_vencidas = (df_final['Estado Licencia'] == 'Vencida').sum()
+        cant_no_tiene = (df_final['Estado Licencia'] == 'No tiene').sum()
+        
+        col3.metric("🟢 Vigentes", cant_vigentes)
+        col4.metric("🔴 Vencidas", cant_vencidas)
+        col5.metric("⚪ No tiene", cant_no_tiene)
 
         st.subheader("Vista previa de los datos consolidados")
         st.dataframe(df_final, use_container_width=True)
