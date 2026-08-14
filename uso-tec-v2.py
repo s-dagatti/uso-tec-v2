@@ -7,14 +7,15 @@ import datetime
 st.set_page_config(page_title="Carga de Información - Conci", layout="wide")
 
 st.title("📂 Tablero de Carga de Información")
-st.markdown("Sube los archivos para procesar, limpiar y consolidar los datos de máquinas, monitores y licencias (Gen 4 y Gen 5).")
+st.markdown("Sube los archivos para procesar, limpiar y consolidar los datos de máquinas, sucursales, monitores y licencias.")
 
 # --- SIDEBAR: Carga de archivos ---
 st.sidebar.header("📁 Carga de Archivos")
 uploaded_file_analizador = st.sidebar.file_uploader("1. Archivo Analizador de Máquina", type=["xlsx"])
-uploaded_file_maquinas = st.sidebar.file_uploader("2. Archivo de Máquinas (Emparejamientos)", type=["xlsx"])
-uploaded_file_activaciones = st.sidebar.file_uploader("3. Control de Activaciones Gen 4 (CSV)", type=["csv"])
-uploaded_file_gen5 = st.sidebar.file_uploader("4. Licencias Gen 5 (Excel)", type=["xlsx"])
+uploaded_file_orgs = st.sidebar.file_uploader("2. Base Orgs ID y Sucursales (CSV)", type=["csv"])
+uploaded_file_maquinas = st.sidebar.file_uploader("3. Archivo de Máquinas (Emparejamientos)", type=["xlsx"])
+uploaded_file_activaciones = st.sidebar.file_uploader("4. Control de Activaciones Gen 4 (CSV)", type=["csv"])
+uploaded_file_gen5 = st.sidebar.file_uploader("5. Licencias Gen 5 (Excel)", type=["xlsx"])
 
 # --- FUNCIONES AUXILIARES ---
 spanish_months = {
@@ -92,7 +93,32 @@ if uploaded_file_analizador is not None:
         df_original = pd.read_excel(uploaded_file_analizador)
         df_final = procesar_analizador(df_original.copy())
         
-        # 2. CRUCE CON SEGUNDO ARCHIVO (EMPAREJAMIENTOS)
+        # 2. CRUCE CON BASE DE ORGANIZACIONES Y SUCURSALES
+        if uploaded_file_orgs is not None:
+            df_orgs = pd.read_csv(uploaded_file_orgs)
+            
+            # Deduplicar por Org ID y seleccionar columna de sucursal
+            df_orgs_unique = df_orgs.drop_duplicates(subset=['Org ID'])[['Org ID', 'SUC?']].rename(columns={'SUC?': 'Sucursal'})
+            
+            # Asegurar tipo de datos numérico para el cruce
+            df_final['Identificador de organización'] = pd.to_numeric(df_final['Identificador de organización'], errors='coerce')
+            df_orgs_unique['Org ID'] = pd.to_numeric(df_orgs_unique['Org ID'], errors='coerce')
+            
+            # Merge por Identificador de organización
+            df_final = pd.merge(
+                df_final,
+                df_orgs_unique,
+                left_on='Identificador de organización',
+                right_on='Org ID',
+                how='left'
+            )
+            
+            if 'Org ID' in df_final.columns:
+                df_final = df_final.drop(columns=['Org ID'])
+        else:
+            st.sidebar.warning("⚠️ Falta cargar la Base de Orgs ID (Sucursales).")
+
+        # 3. CRUCE CON SEGUNDO ARCHIVO (EMPAREJAMIENTOS)
         if uploaded_file_maquinas is not None:
             df_maquinas = pd.read_excel(uploaded_file_maquinas, sheet_name='Emparejamientos')
             
@@ -102,9 +128,9 @@ if uploaded_file_analizador is not None:
             # Seleccionar y renombrar columnas
             df_monitores = df_monitores[[
                 'Número de serie de emparejamiento', 
-                'Número de serie',       # Nro de serie del monitor (Col A)
-                'Modelo',                # Modelo Monitor (Col B)
-                'Versión de software'    # Versión Software Monitor (Col E)
+                'Número de serie',       # Nro de serie del monitor
+                'Modelo',                # Modelo Monitor
+                'Versión de software'    # Versión Software Monitor
             ]].rename(columns={
                 'Número de serie': 'Hardware Monitor',
                 'Modelo': 'Modelo Monitor',
@@ -125,16 +151,16 @@ if uploaded_file_analizador is not None:
         else:
             st.sidebar.warning("⚠️ Falta cargar el archivo de máquinas (Emparejamientos).")
 
-        # 3. CRUCE CON TERCER ARCHIVO (LICENCIAS / ACTIVACIONES GEN 4)
+        # 4. CRUCE CON TERCER ARCHIVO (LICENCIAS / ACTIVACIONES GEN 4)
         if uploaded_file_activaciones is not None and 'Hardware Monitor' in df_final.columns:
             df_activaciones = pd.read_csv(uploaded_file_activaciones)
             
-            # Filtrar solo "Monitor Gen 4" en la columna COMPONENTE
+            # Filtrar solo "Monitor Gen 4"
             df_gen4 = df_activaciones[
                 df_activaciones['COMPONENTE'].astype(str).str.strip().str.lower() == 'monitor gen 4'
             ].copy()
             
-            # Ordenar por fecha de inicio para tomar la última activación registrada por monitor
+            # Tomar la última activación registrada por monitor
             df_gen4['Fecha_Inicio_DT'] = pd.to_datetime(df_gen4['Fecha de inicio'], format='%d/%m/%Y', errors='coerce')
             df_gen4 = df_gen4.sort_values('Fecha_Inicio_DT', ascending=True)
             df_gen4_unique = df_gen4.drop_duplicates(subset=['Tornillería'], keep='last')
@@ -173,11 +199,11 @@ if uploaded_file_analizador is not None:
             if col not in df_final.columns:
                 df_final[col] = np.nan
 
-        # 4. CRUCE CON CUARTO ARCHIVO (LICENCIAS GEN 5)
+        # 5. CRUCE CON CUARTO ARCHIVO (LICENCIAS GEN 5)
         if uploaded_file_gen5 is not None:
             df_gen5 = pd.read_excel(uploaded_file_gen5)
             
-            # Parsear fechas en formato español
+            # Parsear fechas
             df_gen5['Inicio_DT'] = df_gen5['Fecha de inicio'].apply(parse_spanish_date)
             df_gen5['Fin_DT'] = df_gen5['Fecha de terminación'].apply(parse_spanish_date)
             df_gen5['Duración_Calc'] = df_gen5.apply(lambda r: calcular_duracion_str(r['Inicio_DT'], r['Fin_DT']), axis=1)
@@ -185,7 +211,7 @@ if uploaded_file_analizador is not None:
             df_gen5['Comienzo_Str'] = df_gen5['Inicio_DT'].dt.strftime('%d/%m/%Y').fillna('-')
             df_gen5['Fin_Str'] = df_gen5['Fin_DT'].dt.strftime('%d/%m/%Y').fillna('-')
             
-            # Limpiar número de serie y tomar el registro más reciente por número de serie
+            # Tomar la activación más reciente por número de serie
             df_gen5['N.° de serie'] = df_gen5['N.° de serie'].astype(str).str.strip()
             df_gen5_sorted = df_gen5.sort_values('Inicio_DT', ascending=True)
             df_gen5_unique = df_gen5_sorted.drop_duplicates(subset=['N.° de serie'], keep='last')
@@ -205,7 +231,7 @@ if uploaded_file_analizador is not None:
                     return field_map[s_mon]
                 return np.nan
 
-            # Asignar los datos Gen 5 a los registros que no tengan licencia Gen 4 previa
+            # Asignar los datos Gen 5 a los registros sin licencia previa
             for col, field_map in [
                 ('Licencia', map_licencia),
                 ('Duración Licencia', map_duracion),
@@ -215,7 +241,7 @@ if uploaded_file_analizador is not None:
                 g5_vals = df_final.apply(lambda r: buscar_gen5(r, field_map), axis=1)
                 df_final[col] = df_final[col].fillna(g5_vals)
 
-        # 5. CÁLCULO DEL ESTADO FINAL DE LA LICENCIA
+        # 6. CÁLCULO DEL ESTADO FINAL DE LA LICENCIA
         df_final['Estado Licencia'] = df_final.apply(calcular_estado_licencia, axis=1)
 
         # --- UI: RESULTADOS ---
