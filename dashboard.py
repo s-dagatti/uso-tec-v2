@@ -59,6 +59,16 @@ if 'AutoTrac™ Activo' in df_raw.columns:
 col_licencia = 'Licencia' if 'Licencia' in df_raw.columns else ('licencia' if 'licencia' in df_raw.columns else None)
 col_fin_licencia = 'Fin Licenicia' if 'Fin Licenicia' in df_raw.columns else ('Fin Licencia' if 'Fin Licencia' in df_raw.columns else None)
 
+# Cálculo del Estado de Licencia (Vigente / Vencida / Sin Licencia)
+hoy = pd.Timestamp.now().normalize()
+if col_fin_licencia and col_fin_licencia in df_raw.columns:
+    df_raw['Fecha_fin_licencia_dt'] = pd.to_datetime(df_raw[col_fin_licencia], errors='coerce')
+    df_raw['Estado Licencia'] = df_raw['Fecha_fin_licencia_dt'].apply(
+        lambda x: "Vigente" if pd.notna(x) and x >= hoy else ("Vencida" if pd.notna(x) else "Sin Licencia")
+    )
+else:
+    df_raw['Estado Licencia'] = "Sin Licencia"
+
 # Identificación de pantallas aptas (versión >= 23.3)
 df_raw['es_valida'] = df_raw['Versión Software Monitor'].apply(es_version_valida)
 
@@ -91,6 +101,10 @@ if col_licencia:
 else:
     sel_licencia = "Todas"
 
+# Filtro: Estado Licencia
+estados_licencia = ["Todos"] + sorted([e for e in df_sidebar['Estado Licencia'].dropna().unique() if str(e).strip() != ''])
+sel_estado_licencia = st.sidebar.selectbox("Estado Licencia", estados_licencia)
+
 # Filtro: Slider Período de Análisis
 fecha_min = df_sidebar['Fecha_inicio_dt'].min()
 fecha_max = df_sidebar['Fecha_fin_dt'].max()
@@ -120,6 +134,9 @@ if sel_tipo != "Todos":
 
 if col_licencia and sel_licencia != "Todas":
     df_filtrado_raw = df_filtrado_raw[df_filtrado_raw[col_licencia] == sel_licencia]
+
+if sel_estado_licencia != "Todos":
+    df_filtrado_raw = df_filtrado_raw[df_filtrado_raw['Estado Licencia'] == sel_estado_licencia]
 
 if rango_fechas:
     df_filtrado_raw = df_filtrado_raw[
@@ -151,14 +168,12 @@ with tabs[0]:
         st.warning("⚠️ No existen datos para los filtros seleccionados en el período indicado.")
 
 # --- CÁLCULO DE KPIS ---
-# 1. Promedio General (filtrado con AutoTrac >= 1%)
 promedio_autotrac = (
     df_filtrado_autotrac["AutoTrac™ Activo"].mean()
     if not df_filtrado_autotrac.empty
     else None
 )
 
-# 2. Promedio de la última semana
 max_fecha_kpi = (
     df_filtrado_autotrac["Fecha_fin_dt"].max()
     if not df_filtrado_autotrac.empty
@@ -180,7 +195,6 @@ if inicio_ult_semana_kpi is not None:
 else:
     promedio_ult_semana_kpi = None
 
-# 3. Cálculo de variación (Delta)
 if promedio_autotrac is not None and promedio_ult_semana_kpi is not None:
     delta_autotrac = promedio_ult_semana_kpi - promedio_autotrac
     delta_str = f"{delta_autotrac:+.2f}% vs. últ. semana"
@@ -190,7 +204,6 @@ else:
 maquinas_totales = df_filtrado_raw["Número de serie de la máquina"].nunique()
 maquinas_aptas = df_filtrado_aptas["Número de serie de la máquina"].nunique()
 
-# --- RECTÁNGULOS KPI ---
 kpi1, kpi2, kpi3 = st.columns(3)
 
 with kpi1:
@@ -220,12 +233,10 @@ with kpi3:
 st.subheader("📊 Promedio de Uso de AutoTrac™ por Máquina")
 
 if not df_filtrado_aptas.empty:
-    # Columna auxiliar para el promedio (asigna None a los < 1%)
     df_filtrado_aptas.loc[:, "AutoTrac_Filtrado"] = df_filtrado_aptas[
         "AutoTrac™ Activo"
     ].apply(lambda x: x if (pd.notna(x) and x >= 1) else None)
 
-    # Determinar el período de la última semana de análisis
     max_fecha_analisis = df_filtrado_aptas["Fecha_fin_dt"].max()
     inicio_ult_semana = (
         max_fecha_analisis - pd.Timedelta(days=7)
@@ -251,9 +262,8 @@ if not df_filtrado_aptas.empty:
             columns=["Máquina", "Promedio_Ultima_Semana"]
         )
 
-    # Extraer el último dato del período para Sucursal, Licencia y Fin Licencia
-    # (Excluimos 'Máquina' de cols_ultimos para evitar el error de reset_index en groupby)
-    cols_ultimos = ["Sucursal"]
+    # Extraer el último registro por máquina para Sucursal, Estado Licencia, Licencia y Vencimiento
+    cols_ultimos = ["Sucursal", "Estado Licencia"]
     if col_licencia and col_licencia in df_filtrado_aptas.columns:
         cols_ultimos.append(col_licencia)
     if col_fin_licencia and col_fin_licencia in df_filtrado_aptas.columns:
@@ -266,7 +276,6 @@ if not df_filtrado_aptas.empty:
         .reset_index()
     )
 
-    # Agrupación base solo por atributos fijos de la máquina
     group_cols = ["Máquina", "Tipo", "Organización"]
 
     df_promedios = df_filtrado_aptas.groupby(
@@ -277,17 +286,14 @@ if not df_filtrado_aptas.empty:
         Total_Períodos=("Fecha_inicio_dt", "count"),
     )
 
-    # Merge con los últimos datos registrados del período (Sucursal, Licencia, Fin Licenicia)
     df_promedios = pd.merge(
         df_promedios, df_ultimos_datos, on="Máquina", how="left"
     )
 
-    # Merge con el promedio de la última semana
     df_promedios = pd.merge(
         df_promedios, df_ult_semana, on="Máquina", how="left"
     )
 
-    # Lógica de Evolución AutoTrac
     def evaluar_evolucion(row):
         prom_gen = row["Promedio_AutoTrac"]
         prom_ult = row["Promedio_Ultima_Semana"]
@@ -307,18 +313,15 @@ if not df_filtrado_aptas.empty:
         evaluar_evolucion, axis=1
     )
 
-    # Formateo como porcentaje
     df_promedios["AutoTrac™ Promedio (%)"] = df_promedios[
         "Promedio_AutoTrac"
     ].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "Sin Registros ( < 1% )")
 
-    # Manejo de nombre de Licencia
     if col_licencia and col_licencia in df_promedios.columns:
         df_promedios["Licencia"] = df_promedios[col_licencia].fillna("-")
     else:
         df_promedios["Licencia"] = "-"
 
-    # Manejo y formateo de la fecha de vencimiento
     if col_fin_licencia and col_fin_licencia in df_promedios.columns:
         df_promedios["Vencimiento Licencia"] = pd.to_datetime(
             df_promedios[col_fin_licencia], errors="coerce"
@@ -326,7 +329,6 @@ if not df_filtrado_aptas.empty:
     else:
         df_promedios["Vencimiento Licencia"] = "-"
 
-    # Selección y ordenamiento final de columnas
     cols_display = [
         "Máquina",
         "Tipo",
@@ -336,6 +338,7 @@ if not df_filtrado_aptas.empty:
         "Evolución AutoTrac",
         "Licencia",
         "Vencimiento Licencia",
+        "Estado Licencia",
     ]
 
     df_promedios_display = df_promedios.sort_values(
@@ -351,13 +354,27 @@ if not df_filtrado_aptas.empty:
                 return "color: #d32f2f; font-weight: bold;"
         return ""
 
-    if hasattr(df_promedios_display.style, "map"):
-        styled_df = df_promedios_display.style.map(
-            colorear_evolucion, subset=["Evolución AutoTrac"]
+    def colorear_estado_licencia(val):
+        if isinstance(val, str):
+            if val == "Vigente":
+                return "color: #2e7d32; font-weight: bold;"
+            elif val == "Vencida":
+                return "color: #d32f2f; font-weight: bold;"
+            elif val == "Sin Licencia":
+                return "color: #757575;"
+        return ""
+
+    styled_df = df_promedios_display.style
+
+    if hasattr(styled_df, "map"):
+        styled_df = (
+            styled_df.map(colorear_evolucion, subset=["Evolución AutoTrac"])
+            .map(colorear_estado_licencia, subset=["Estado Licencia"])
         )
     else:
-        styled_df = df_promedios_display.style.applymap(
-            colorear_evolucion, subset=["Evolución AutoTrac"]
+        styled_df = (
+            styled_df.applymap(colorear_evolucion, subset=["Evolución AutoTrac"])
+            .applymap(colorear_estado_licencia, subset=["Estado Licencia"])
         )
 
     st.dataframe(styled_df, use_container_width=True)
