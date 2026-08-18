@@ -55,8 +55,9 @@ df_raw['Fecha_fin_dt'] = pd.to_datetime(df_raw['Fecha de terminación'], dayfirs
 if 'AutoTrac™ Activo' in df_raw.columns:
     df_raw['AutoTrac™ Activo'] = pd.to_numeric(df_raw['AutoTrac™ Activo'], errors='coerce')
 
-# Identificación de la columna Licencia
+# Identificación dinámica de columnas de Licencia y Vencimiento
 col_licencia = 'Licencia' if 'Licencia' in df_raw.columns else ('licencia' if 'licencia' in df_raw.columns else None)
+col_fin_licencia = 'Fin Licenicia' if 'Fin Licenicia' in df_raw.columns else ('Fin Licencia' if 'Fin Licencia' in df_raw.columns else None)
 
 # Identificación de pantallas aptas (versión >= 23.3)
 df_raw['es_valida'] = df_raw['Versión Software Monitor'].apply(es_version_valida)
@@ -250,12 +251,13 @@ if not df_filtrado_aptas.empty:
             columns=["Máquina", "Promedio_Ultima_Semana"]
         )
 
-    # Extraer el último dato del período para Sucursal, Licencia y Fin Licenicia
-    cols_ultimos = ["Máquina", "Sucursal"]
+    # Extraer el último dato del período para Sucursal, Licencia y Fin Licencia
+    # (Excluimos 'Máquina' de cols_ultimos para evitar el error de reset_index en groupby)
+    cols_ultimos = ["Sucursal"]
     if col_licencia and col_licencia in df_filtrado_aptas.columns:
         cols_ultimos.append(col_licencia)
-    if "Fin Licenicia" in df_filtrado_aptas.columns:
-        cols_ultimos.append("Fin Licenicia")
+    if col_fin_licencia and col_fin_licencia in df_filtrado_aptas.columns:
+        cols_ultimos.append(col_fin_licencia)
 
     df_ultimos_datos = (
         df_filtrado_aptas.sort_values("Fecha_fin_dt")
@@ -317,9 +319,9 @@ if not df_filtrado_aptas.empty:
         df_promedios["Licencia"] = "-"
 
     # Manejo y formateo de la fecha de vencimiento
-    if "Fin Licenicia" in df_promedios.columns:
+    if col_fin_licencia and col_fin_licencia in df_promedios.columns:
         df_promedios["Vencimiento Licencia"] = pd.to_datetime(
-            df_promedios["Fin Licenicia"], errors="coerce"
+            df_promedios[col_fin_licencia], errors="coerce"
         ).dt.strftime("%d/%m/%Y").fillna("-")
     else:
         df_promedios["Vencimiento Licencia"] = "-"
