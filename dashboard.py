@@ -453,22 +453,26 @@ with tabs[0]:
     
           # --- CÁLCULO DE KPIS PUK ---
           if "Estado Licencia" in df_puk.columns:
-            puk_activas = df_puk[
-                df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
-                == "vigente"
-            ]
+            estado_clean = df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
+            
+            puk_activas = df_puk[estado_clean == "vigente"]
+            
+            # Incluye estado "vencida", "vencido" y "no tiene"
             puk_vencidas = df_puk[
-                df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
-                == "vencida"
+                (estado_clean.str.contains("vencid", na=False)) | 
+                (estado_clean.str.contains("no tiene", na=False))
             ]
           else:
             puk_activas = df_puk[df_puk["Fecha_venc_dt"] >= hoy]
-            puk_vencidas = df_puk[df_puk["Fecha_venc_dt"] < hoy]
-    
-          puk_por_vencer = df_puk[
-              (df_puk["Fecha_venc_dt"] >= hoy)
-              & (df_puk["Fecha_venc_dt"] <= proximo_mes)
-          ]
+            puk_vencidas = df_puk[
+                (df_puk["Fecha_venc_dt"] < hoy) | 
+                (df_puk["Vencimiento Licencia"] == "-")
+            ]
+
+      puk_por_vencer = df_puk[
+          (df_puk["Fecha_venc_dt"] >= hoy)
+          & (df_puk["Fecha_venc_dt"] <= proximo_mes)
+      ]
     
           col_puk1, col_puk2, col_puk3 = st.columns(3)
     
