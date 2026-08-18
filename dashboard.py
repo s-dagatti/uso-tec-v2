@@ -562,106 +562,105 @@ with tabs[0]:
               "ℹ️ No se encontraron máquinas con licencias PUK (Renovable"
               " Esencial / Avanzada) para los filtros seleccionados."
           )
-
         # --- 8. GRÁFICO HISTÓRICO SEMANAL DE ADOPCIÓN DE AUTOTRAC ---
-          st.markdown("---")
-          st.subheader("📈 Evolución Semanal del Uso de AutoTrac™")
-          st.caption(
-              "Evolución semanal de la cantidad de máquinas aptas que utilizaron"
-              " AutoTrac™ (≥ 1%) y el porcentaje promedio de uso registrado."
+      st.markdown("---")
+      st.subheader("📈 Evolución Semanal del Uso de AutoTrac™")
+      st.caption(
+          "Evolución semanal de la cantidad de máquinas aptas que utilizaron"
+          " AutoTrac™ (≥ 1%) y el porcentaje promedio de uso registrado."
+      )
+
+      # Preparar base filtrada con fechas válidas
+      df_hist_semanal = df_filtrado_aptas.dropna(subset=["Fecha_fin_dt"]).copy()
+
+      if not df_hist_semanal.empty:
+        # Agrupación por semana (inicio de semana)
+        df_hist_semanal["Semana_Inicio"] = df_hist_semanal[
+            "Fecha_fin_dt"
+        ].dt.to_period("W").dt.start_time
+
+        # Registros con AutoTrac activo >= 1%
+        df_autotrac_semanal = df_hist_semanal[
+            pd.notna(df_hist_semanal["AutoTrac™ Activo"])
+            & (df_hist_semanal["AutoTrac™ Activo"] >= 1)
+        ]
+
+        # Agrupación por semana: cantidad de máquinas únicas y promedio de uso
+        df_semanal = (
+            df_autotrac_semanal.groupby("Semana_Inicio")
+            .agg(
+                Cant_Maquinas=("Máquina", "nunique"),
+                Promedio_AutoTrac=("AutoTrac™ Activo", "mean"),
+            )
+            .reset_index()
+            .sort_values("Semana_Inicio")
+        )
+
+        df_semanal["Semana_Str"] = df_semanal["Semana_Inicio"].dt.strftime(
+            "%d/%m/%Y"
+        )
+
+        if not df_semanal.empty:
+          # Gráfico con doble eje Y
+          fig_semanal = make_subplots(specs=[[{"secondary_y": True}]])
+
+          # Barras: Cantidad de máquinas
+          fig_semanal.add_trace(
+              go.Bar(
+                  x=df_semanal["Semana_Str"],
+                  y=df_semanal["Cant_Maquinas"],
+                  name="Máquinas con AutoTrac™",
+                  marker_color="#2b5c8f",
+                  text=df_semanal["Cant_Maquinas"],
+                  textposition="auto",
+              ),
+              secondary_y=False,
           )
-    
-          # Preparar base filtrada con fechas válidas
-          df_hist_semanal = df_filtrado_aptas.dropna(subset=["Fecha_fin_dt"]).copy()
-    
-          if not df_hist_semanal.empty:
-            # Agrupación por semana (inicio de semana)
-            df_hist_semanal["Semana_Inicio"] = df_hist_semanal[
-                "Fecha_fin_dt"
-            ].dt.to_period("W").dt.start_time
-    
-            # Registros con AutoTrac activo >= 1%
-            df_autotrac_semanal = df_hist_semanal[
-                pd.notna(df_hist_semanal["AutoTrac™ Activo"])
-                & (df_hist_semanal["AutoTrac™ Activo"] >= 1)
-            ]
-    
-            # Agrupación por semana: cantidad de máquinas únicas y promedio de uso
-            df_semanal = (
-                df_autotrac_semanal.groupby("Semana_Inicio")
-                .agg(
-                    Cant_Maquinas=("Máquina", "nunique"),
-                    Promedio_AutoTrac=("AutoTrac™ Activo", "mean"),
-                )
-                .reset_index()
-                .sort_values("Semana_Inicio")
-            )
-    
-            df_semanal["Semana_Str"] = df_semanal["Semana_Inicio"].dt.strftime(
-                "%d/%m/%Y"
-            )
-    
-            if not df_semanal.empty:
-              # Gráfico con doble eje Y
-              fig_semanal = make_subplots(specs=[[{"secondary_y": True}]])
-    
-              # Barras: Cantidad de máquinas
-              fig_semanal.add_trace(
-                  go.Bar(
-                      x=df_semanal["Semana_Str"],
-                      y=df_semanal["Cant_Maquinas"],
-                      name="Máquinas con AutoTrac™",
-                      marker_color="#2b5c8f",
-                      text=df_semanal["Cant_Maquinas"],
-                      textposition="auto",
+
+          # Línea: % Promedio de AutoTrac
+          fig_semanal.add_trace(
+              go.Scatter(
+                  x=df_semanal["Semana_Str"],
+                  y=df_semanal["Promedio_AutoTrac"],
+                  name="% Promedio AutoTrac™",
+                  mode="lines+markers+text",
+                  line=dict(color="#367c2b", width=3),  # Verde John Deere
+                  marker=dict(size=8),
+                  text=df_semanal["Promedio_AutoTrac"].apply(
+                      lambda x: f"{x:.1f}%"
                   ),
-                  secondary_y=False,
-              )
-    
-              # Línea: % Promedio de AutoTrac
-              fig_semanal.add_trace(
-                  go.Scatter(
-                      x=df_semanal["Semana_Str"],
-                      y=df_semanal["Promedio_AutoTrac"],
-                      name="% Promedio AutoTrac™",
-                      mode="lines+markers+text",
-                      line=dict(color="#367c2b", width=3),  # Verde John Deere
-                      marker=dict(size=8),
-                      text=df_semanal["Promedio_AutoTrac"].apply(
-                          lambda x: f"{x:.1f}%"
-                      ),
-                      textposition="top center",
-                  ),
-                  secondary_y=True,
-              )
-    
-              fig_semanal.update_layout(
-                  title="📅 Tendencia Semanal: Equipos Activos vs. % de Adopción",
-                  xaxis_title="Semana",
-                  hovermode="x unified",
-                  legend=dict(
-                      orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-                  ),
-                  margin=dict(t=50, b=40, l=10, r=10),
-              )
-    
-              fig_semanal.update_yaxes(
-                  title_text="Cantidad de Máquinas", secondary_y=False
-              )
-              fig_semanal.update_yaxes(
-                  title_text="% Promedio AutoTrac™",
-                  secondary_y=True,
-                  range=[0, 110],
-              )
-    
-              st.plotly_chart(fig_semanal, use_container_width=True)
-            else:
-              st.info(
-                  "No se registraron equipos con uso de AutoTrac™ ≥ 1% en el"
-                  " período seleccionado."
-              )
-          else:
-            st.info("No existen fechas válidas registradas para agrupar por semana.")
+                  textposition="top center",
+              ),
+              secondary_y=True,
+          )
+
+          fig_semanal.update_layout(
+              title="📅 Tendencia Semanal: Equipos Activos vs. % de Adopción",
+              xaxis_title="Semana",
+              hovermode="x unified",
+              legend=dict(
+                  orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+              ),
+              margin=dict(t=50, b=40, l=10, r=10),
+          )
+
+          fig_semanal.update_yaxes(
+              title_text="Cantidad de Máquinas", secondary_y=False
+          )
+          fig_semanal.update_yaxes(
+              title_text="% Promedio AutoTrac™",
+              secondary_y=True,
+              range=[0, 110],
+          )
+
+          st.plotly_chart(fig_semanal, use_container_width=True)
+        else:
+          st.info(
+              "No se registraron equipos con uso de AutoTrac™ ≥ 1% en el"
+              " período seleccionado."
+          )
+      else:
+        st.info("No existen fechas válidas registradas para agrupar por semana.")
           
     else:
         st.write(
