@@ -48,9 +48,12 @@ except Exception as e:
     st.error(f"❌ Error al conectar con la base de datos en GitHub (`s-dagatti/uso-tec-v2`): {e}")
     st.stop()
 
-# Conversión de fechas (Inicio y Terminación)
+# Conversión de fechas y tipos numéricos
 df_raw['Fecha_inicio_dt'] = pd.to_datetime(df_raw['Fecha de inicio'], dayfirst=True, errors='coerce')
 df_raw['Fecha_fin_dt'] = pd.to_datetime(df_raw['Fecha de terminación'], dayfirst=True, errors='coerce')
+
+if 'AutoTrac™ Activo' in df_raw.columns:
+    df_raw['AutoTrac™ Activo'] = pd.to_numeric(df_raw['AutoTrac™ Activo'], errors='coerce')
 
 # Identificación de pantallas aptas (versión >= 23.3)
 df_raw['es_valida'] = df_raw['Versión Software Monitor'].apply(es_version_valida)
@@ -119,9 +122,9 @@ df_filtrado_autotrac = df_filtrado_aptas[
 ]
 
 # --- 6. PESTAÑA: USO DE AUTOTRAC ---
-tab_autotrac, = st.tabs(["🎯 Uso de AutoTrac"])
+tabs = st.tabs(["🎯 Uso de AutoTrac"])
 
-with tab_autotrac:
+with tabs[0]:
     st.title("🎯 Uso de AutoTrac™")
     st.caption("Promedio de adopción para monitores aptos (**software ≥ 23.3**) considerando registros con **uso ≥ 1%**.")
 
@@ -164,8 +167,8 @@ with tab_autotrac:
     st.subheader("📊 Promedio de Uso de AutoTrac™ por Máquina")
     
     if not df_filtrado_aptas.empty:
-        # Columna auxiliar para el promedio (asigna None a los < 1%)
-        df_filtrado_aptas['AutoTrac_Filtrado'] = df_filtrado_aptas['AutoTrac™ Activo'].apply(
+        # Columna auxiliar para el promedio asignando NaN a los valores < 1% (evita alterar los promedios)
+        df_filtrado_aptas.loc[:, 'AutoTrac_Filtrado'] = df_filtrado_aptas['AutoTrac™ Activo'].apply(
             lambda x: x if (pd.notna(x) and x >= 1) else None
         )
 
