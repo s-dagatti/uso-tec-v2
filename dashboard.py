@@ -459,7 +459,7 @@ with tabs[0]:
             
             # Incluye estado "vencida", "vencido" y "no tiene"
             puk_vencidas = df_puk[
-                (estado_clean.str.contains("vencid", na=False)) | 
+                (estado_clean.str.contains("vencida", na=False)) | 
                 (estado_clean.str.contains("no tiene", na=False))
             ]
           else:
