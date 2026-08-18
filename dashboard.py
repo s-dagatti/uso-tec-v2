@@ -149,32 +149,71 @@ with tabs[0]:
     else:
         st.warning("⚠️ No existen datos para los filtros seleccionados en el período indicado.")
 
-    # --- CÁLCULO DE KPIS ---
-    promedio_autotrac = df_filtrado_autotrac['AutoTrac™ Activo'].mean() if not df_filtrado_autotrac.empty else None
-    maquinas_totales = df_filtrado_raw['Número de serie de la máquina'].nunique()
-    maquinas_aptas = df_filtrado_aptas['Número de serie de la máquina'].nunique()
+# --- CÁLCULO DE KPIS ---
+# 1. Promedio General (filtrado con AutoTrac >= 1%)
+promedio_autotrac = (
+    df_filtrado_autotrac["AutoTrac™ Activo"].mean()
+    if not df_filtrado_autotrac.empty
+    else None
+)
 
-    kpi1, kpi2, kpi3 = st.columns(3)
+# 2. Promedio de la última semana
+max_fecha_kpi = (
+    df_filtrado_autotrac["Fecha_fin_dt"].max()
+    if not df_filtrado_autotrac.empty
+    else None
+)
+inicio_ult_semana_kpi = (
+    max_fecha_kpi - pd.Timedelta(days=7) if pd.notna(max_fecha_kpi) else None
+)
 
-    with kpi1:
-        st.metric(
-            label="Promedio AutoTrac™ Activo",
-            value=f"{promedio_autotrac:.2f}%" if promedio_autotrac is not None else "Sin Datos"
-        )
+if inicio_ult_semana_kpi is not None:
+    df_kpi_ult_semana = df_filtrado_autotrac[
+        df_filtrado_autotrac["Fecha_fin_dt"] >= inicio_ult_semana_kpi
+    ]
+    promedio_ult_semana_kpi = (
+        df_kpi_ult_semana["AutoTrac™ Activo"].mean()
+        if not df_kpi_ult_semana.empty
+        else None
+    )
+else:
+    promedio_ult_semana_kpi = None
 
-    with kpi2:
-        st.metric(
-            label="Máquinas Totales",
-            value=f"{maquinas_totales:,}".replace(",", ".")
-        )
+# 3. Cálculo de variación (Delta)
+if promedio_autotrac is not None and promedio_ult_semana_kpi is not None:
+    delta_autotrac = promedio_ult_semana_kpi - promedio_autotrac
+    delta_str = f"{delta_autotrac:+.2f}% vs. últ. semana"
+else:
+    delta_str = None
 
-    with kpi3:
-        st.metric(
-            label="Máquinas Aptas (≥ 23.3)",
-            value=f"{maquinas_aptas:,}".replace(",", ".")
-        )
+maquinas_totales = df_filtrado_raw["Número de serie de la máquina"].nunique()
+maquinas_aptas = df_filtrado_aptas["Número de serie de la máquina"].nunique()
 
-    st.markdown("---")
+# --- RECTÁNGULOS KPI ---
+kpi1, kpi2, kpi3 = st.columns(3)
+
+with kpi1:
+    st.metric(
+        label="Promedio AutoTrac™ Activo",
+        value=(
+            f"{promedio_autotrac:.2f}%"
+            if promedio_autotrac is not None
+            else "Sin Datos"
+        ),
+        delta=delta_str,
+    )
+
+with kpi2:
+    st.metric(
+        label="Máquinas Totales",
+        value=f"{maquinas_totales:,}".replace(",", "."),
+    )
+
+with kpi3:
+    st.metric(
+        label="Máquinas Aptas (≥ 23.3)",
+        value=f"{maquinas_aptas:,}".replace(",", "."),
+    )
 
 # --- TABLA RESUMEN POR MÁQUINA ---
 st.subheader("📊 Promedio de Uso de AutoTrac™ por Máquina")
