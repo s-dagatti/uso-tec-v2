@@ -410,182 +410,177 @@ with tabs[0]:
 
         st.dataframe(styled_df, use_container_width=True)
 
-    # --- 7. ANÁLISIS DEL ESTADO DE PUKS (LICENCIAS RENOVABLES) ---
+        # --- 7. ANÁLISIS DEL ESTADO DE PUKS (LICENCIAS RENOVABLES) ---
         st.markdown("---")
         st.subheader("📦 Análisis del Estado de Kits PUK (Licencias Renovables)")
         st.caption(
             "Los PUKs incluyen licencias **Renovable Esencial** y **Renovable"
-            " Avanzada**, las cuales requieren estar activas para operar"
-            " AutoTrac™."
+            " Avanzada**, las cuales requieren estar activas para operar AutoTrac™."
         )
-    
+
         # Función para identificar licencias PUK
         def es_licencia_puk(lic_val):
-          if pd.isna(lic_val):
-            return False
-          val_str = str(lic_val).lower().strip()
-          return (
-              ("renovable" in val_str)
-              or ("esencial" in val_str)
-              or ("escencial" in val_str)
-              or ("avanzada" in val_str)
-          )
-    
+            if pd.isna(lic_val):
+                return False
+            val_str = str(lic_val).lower().strip()
+            return (
+                ("renovable" in val_str)
+                or ("esencial" in val_str)
+                or ("escencial" in val_str)
+                or ("avanzada" in val_str)
+            )
+
         # Normalización del tipo para leyenda y agrupaciones
         def normalizar_tipo_puk(lic_val):
-          val_str = str(lic_val).lower()
-          if "avanzada" in val_str:
-            return "Renovable Avanzada"
-          return "Renovable Esencial"
-    
+            val_str = str(lic_val).lower()
+            if "avanzada" in val_str:
+                return "Renovable Avanzada"
+            return "Renovable Esencial"
+
         # Filtrar máquinas únicas que posean PUK
         df_puk = df_promedios[
             df_promedios["Licencia"].apply(es_licencia_puk)
         ].copy()
-    
+
         if not df_puk.empty:
-          df_puk["Fecha_venc_dt"] = pd.to_datetime(
-              df_puk["Vencimiento Licencia"], format="%d/%m/%Y", errors="coerce"
-          )
-          df_puk["Tipo_PUK"] = df_puk["Licencia"].apply(normalizar_tipo_puk)
-    
-          # Fechas de referencia para cálculos
-          hoy = pd.Timestamp.today().normalize()
-          proximo_mes = hoy + pd.Timedelta(days=30)
-    
-          # --- CÁLCULO DE KPIS PUK ---
-          if "Estado Licencia" in df_puk.columns:
-            estado_clean = df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
-            
-            puk_activas = df_puk[estado_clean == "vigente"]
-            
-            # Considera licencias vencidas y equipos con "No tiene"
-            puk_vencidas = df_puk[
-                (estado_clean.str.contains("vencid", na=False)) | 
-                (estado_clean.str.contains("no tiene", na=False))
+            # Flexible date parsing
+            df_puk["Fecha_venc_dt"] = pd.to_datetime(
+                df_puk["Vencimiento Licencia"], dayfirst=True, errors="coerce"
+            )
+            df_puk["Tipo_PUK"] = df_puk["Licencia"].apply(normalizar_tipo_puk)
+
+            # Fechas de referencia para cálculos
+            hoy = pd.Timestamp.today().normalize()
+            proximo_mes = hoy + pd.Timedelta(days=30)
+
+            # --- CÁLCULO DE KPIS PUK ---
+            if "Estado Licencia" in df_puk.columns:
+                estado_clean = df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
+                puk_activas = df_puk[estado_clean == "vigente"]
+                puk_vencidas = df_puk[
+                    (estado_clean.str.contains("vencid", na=False)) | 
+                    (estado_clean.str.contains("no tiene", na=False))
+                ]
+            else:
+                puk_activas = df_puk[df_puk["Fecha_venc_dt"] >= hoy]
+                puk_vencidas = df_puk[
+                    (df_puk["Fecha_venc_dt"] < hoy) | 
+                    (df_puk["Vencimiento Licencia"] == "-")
+                ]
+
+            puk_por_vencer = df_puk[
+                (df_puk["Fecha_venc_dt"] >= hoy)
+                & (df_puk["Fecha_venc_dt"] <= proximo_mes)
             ]
-          else:
-            puk_activas = df_puk[df_puk["Fecha_venc_dt"] >= hoy]
-            puk_vencidas = df_puk[
-                (df_puk["Fecha_venc_dt"] < hoy) | 
-                (df_puk["Vencimiento Licencia"] == "-")
-            ]
-    
-          puk_por_vencer = df_puk[
-              (df_puk["Fecha_venc_dt"] >= hoy)
-              & (df_puk["Fecha_venc_dt"] <= proximo_mes)
-          ]
-    
-          col_puk1, col_puk2, col_puk3 = st.columns(3)
-    
-          with col_puk1:
-            st.metric(label="🟢 Licencias Activas (PUK)", value=len(puk_activas))
-    
-          with col_puk2:
-            st.metric(label="🔴 Licencias Vencidas / Sin Lic. (PUK)", value=len(puk_vencidas))
-    
-          with col_puk3:
-            st.metric(
-                label="⚠️ Por Vencer Próximo Mes", value=len(puk_por_vencer)
-            )
-    
-          # --- GRÁFICO DE VENCIMIENTOS EN EL TIEMPO ---
-          df_puk_chart = df_puk.dropna(subset=["Fecha_venc_dt"]).copy()
-    
-          if not df_puk_chart.empty:
-            df_puk_chart["Año_Mes"] = (
-                df_puk_chart["Fecha_venc_dt"].dt.to_period("M").astype(str)
-            )
-    
-            df_grouped = (
-                df_puk_chart.groupby(["Año_Mes", "Tipo_PUK"])
-                .size()
-                .reset_index(name="Cantidad")
-            )
-            df_grouped = df_grouped.sort_values("Año_Mes")
-    
-            fig_puk = px.bar(
-                df_grouped,
-                x="Año_Mes",
-                y="Cantidad",
-                color="Tipo_PUK",
-                barmode="group",
-                title="📅 Cronograma Histórico y Futuro de Vencimientos PUK",
-                labels={
-                    "Año_Mes": "Mes de Vencimiento",
-                    "Cantidad": "Cantidad de Licencias",
-                    "Tipo_PUK": "Tipo de Licencia",
-                },
-                color_discrete_map={
-                    "Renovable Esencial": "#2b5c8f",
-                    "Renovable Avanzada": "#367c2b",
-                },
-                text="Cantidad",
-            )
-    
-            fig_puk.update_layout(
-                xaxis_type="category",
-                xaxis_title="Mes de Vencimiento",
-                yaxis_title="Cantidad de Licencias",
-                legend_title_text="Tipo de PUK",
-                hovermode="x unified",
-            )
-    
-            st.plotly_chart(fig_puk, use_container_width=True)
-          else:
-            st.info(
-                "No hay fechas de vencimiento válidas registradas para graficar."
-            )
-    
-          # --- TABLA DETALLE DE PUKS ---
-          st.markdown("##### 📋 Detalle de Equipos con Licencia PUK")
-    
-          df_puk_display = df_puk.sort_values(
-              by="Fecha_venc_dt", ascending=True, na_position="last"
-          )[cols_display]
-    
-          styled_puk = df_puk_display.style
-    
-          if hasattr(styled_puk, "map"):
-            styled_puk = styled_puk.map(
-                colorear_evolucion, subset=["Evolución AutoTrac"]
-            ).map(colorear_estado_licencia, subset=["Estado Licencia"])
-          else:
-            styled_puk = styled_puk.applymap(
-                colorear_evolucion, subset=["Evolución AutoTrac"]
-            ).applymap(colorear_estado_licencia, subset=["Estado Licencia"])
-    
-          st.dataframe(styled_puk, use_container_width=True)
-    
+
+            col_puk1, col_puk2, col_puk3 = st.columns(3)
+
+            with col_puk1:
+                st.metric(label="🟢 Licencias Activas (PUK)", value=len(puk_activas))
+
+            with col_puk2:
+                st.metric(label="🔴 Licencias Vencidas / Sin Lic. (PUK)", value=len(puk_vencidas))
+
+            with col_puk3:
+                st.metric(label="⚠️ Por Vencer Próximo Mes", value=len(puk_por_vencer))
+
+            # --- GRÁFICO DE VENCIMIENTOS EN EL TIEMPO ---
+            df_puk_chart = df_puk.dropna(subset=["Fecha_venc_dt"]).copy()
+
+            if not df_puk_chart.empty:
+                df_puk_chart["Año_Mes"] = (
+                    df_puk_chart["Fecha_venc_dt"].dt.to_period("M").astype(str)
+                )
+
+                df_grouped = (
+                    df_puk_chart.groupby(["Año_Mes", "Tipo_PUK"])
+                    .size()
+                    .reset_index(name="Cantidad")
+                    .sort_values("Año_Mes")
+                )
+
+                fig_puk = px.bar(
+                    df_grouped,
+                    x="Año_Mes",
+                    y="Cantidad",
+                    color="Tipo_PUK",
+                    barmode="group",
+                    title="📅 Cronograma Histórico y Futuro de Vencimientos PUK",
+                    labels={
+                        "Año_Mes": "Mes de Vencimiento",
+                        "Cantidad": "Cantidad de Licencias",
+                        "Tipo_PUK": "Tipo de Licencia",
+                    },
+                    color_discrete_map={
+                        "Renovable Esencial": "#2b5c8f",
+                        "Renovable Avanzada": "#367c2b",
+                    },
+                    text="Cantidad",
+                )
+
+                fig_puk.update_layout(
+                    xaxis_type="category",
+                    xaxis_title="Mes de Vencimiento",
+                    yaxis_title="Cantidad de Licencias",
+                    legend_title_text="Tipo de PUK",
+                    hovermode="x unified",
+                )
+
+                st.plotly_chart(fig_puk, use_container_width=True)
+            else:
+                st.info("No hay fechas de vencimiento válidas registradas para graficar.")
+
+            # --- TABLA DETALLE DE PUKS ---
+            st.markdown("##### 📋 Detalle de Equipos con Licencia PUK")
+
+            df_puk_display = df_puk.sort_values(
+                by="Fecha_venc_dt", ascending=True, na_position="last"
+            )[cols_display]
+
+            styled_puk = df_puk_display.style
+
+            if hasattr(styled_puk, "map"):
+                styled_puk = styled_puk.map(
+                    colorear_evolucion, subset=["Evolución AutoTrac"]
+                ).map(colorear_estado_licencia, subset=["Estado Licencia"])
+            else:
+                styled_puk = styled_puk.applymap(
+                    colorear_evolucion, subset=["Evolución AutoTrac"]
+                ).applymap(colorear_estado_licencia, subset=["Estado Licencia"])
+
+            st.dataframe(styled_puk, use_container_width=True)
+
         else:
-          st.info(
-              "ℹ️ No se encontraron máquinas con licencias PUK (Renovable"
-              " Esencial / Avanzada) para los filtros seleccionados."
-          )
+            st.info(
+                "ℹ️ No se encontraron máquinas con licencias PUK (Renovable"
+                " Esencial / Avanzada) para los filtros seleccionados."
+            )
+
         # --- 8. GRÁFICO HISTÓRICO SEMANAL DE ADOPCIÓN DE AUTOTRAC ---
-          st.markdown("---")
-          st.subheader("📈 Evolución Semanal del Uso de AutoTrac™")
-          st.caption(
-              "Evolución semanal de la cantidad de máquinas aptas que utilizaron"
-              " AutoTrac™ (≥ 1%) y el porcentaje promedio de uso registrado."
-          )
-    
-          # Preparar base filtrada con fechas válidas
-          df_hist_semanal = df_filtrado_aptas.dropna(subset=["Fecha_fin_dt"]).copy()
-    
-          if not df_hist_semanal.empty:
+        # (Fuera del else de PUKs para que siempre se evalúe independientemente)
+        st.markdown("---")
+        st.subheader("📈 Evolución Semanal del Uso de AutoTrac™")
+        st.caption(
+            "Evolución semanal de la cantidad de máquinas aptas que utilizaron"
+            " AutoTrac™ (≥ 1%) y el porcentaje promedio de uso registrado."
+        )
+
+        # Preparar base filtrada con fechas válidas
+        df_hist_semanal = df_filtrado_aptas.dropna(subset=["Fecha_fin_dt"]).copy()
+
+        if not df_hist_semanal.empty:
             # Agrupación por semana (inicio de semana)
             df_hist_semanal["Semana_Inicio"] = df_hist_semanal[
                 "Fecha_fin_dt"
             ].dt.to_period("W").dt.start_time
-    
+
             # Registros con AutoTrac activo >= 1%
             df_autotrac_semanal = df_hist_semanal[
                 pd.notna(df_hist_semanal["AutoTrac™ Activo"])
                 & (df_hist_semanal["AutoTrac™ Activo"] >= 1)
             ]
-    
-            # Agrupación por semana: cantidad de máquinas únicas y promedio de uso
+
+            # Agrupación por semana
             df_semanal = (
                 df_autotrac_semanal.groupby("Semana_Inicio")
                 .agg(
@@ -595,71 +590,71 @@ with tabs[0]:
                 .reset_index()
                 .sort_values("Semana_Inicio")
             )
-    
+
             df_semanal["Semana_Str"] = df_semanal["Semana_Inicio"].dt.strftime(
                 "%d/%m/%Y"
             )
-    
+
             if not df_semanal.empty:
-              # Gráfico con doble eje Y
-              fig_semanal = make_subplots(specs=[[{"secondary_y": True}]])
-    
-              # Barras: Cantidad de máquinas
-              fig_semanal.add_trace(
-                  go.Bar(
-                      x=df_semanal["Semana_Str"],
-                      y=df_semanal["Cant_Maquinas"],
-                      name="Máquinas con AutoTrac™",
-                      marker_color="#2b5c8f",
-                      text=df_semanal["Cant_Maquinas"],
-                      textposition="auto",
-                  ),
-                  secondary_y=False,
-              )
-    
-              # Línea: % Promedio de AutoTrac
-              fig_semanal.add_trace(
-                  go.Scatter(
-                      x=df_semanal["Semana_Str"],
-                      y=df_semanal["Promedio_AutoTrac"],
-                      name="% Promedio AutoTrac™",
-                      mode="lines+markers+text",
-                      line=dict(color="#367c2b", width=3),  # Verde John Deere
-                      marker=dict(size=8),
-                      text=df_semanal["Promedio_AutoTrac"].apply(
-                          lambda x: f"{x:.1f}%"
-                      ),
-                      textposition="top center",
-                  ),
-                  secondary_y=True,
-              )
-    
-              fig_semanal.update_layout(
-                  title="📅 Tendencia Semanal: Equipos Activos vs. % de Adopción",
-                  xaxis_title="Semana",
-                  hovermode="x unified",
-                  legend=dict(
-                      orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-                  ),
-                  margin=dict(t=50, b=40, l=10, r=10),
-              )
-    
-              fig_semanal.update_yaxes(
-                  title_text="Cantidad de Máquinas", secondary_y=False
-              )
-              fig_semanal.update_yaxes(
-                  title_text="% Promedio AutoTrac™",
-                  secondary_y=True,
-                  range=[0, 110],
-              )
-    
-              st.plotly_chart(fig_semanal, use_container_width=True)
+                # Gráfico con doble eje Y
+                fig_semanal = make_subplots(specs=[[{"secondary_y": True}]])
+
+                # Barras: Cantidad de máquinas
+                fig_semanal.add_trace(
+                    go.Bar(
+                        x=df_semanal["Semana_Str"],
+                        y=df_semanal["Cant_Maquinas"],
+                        name="Máquinas con AutoTrac™",
+                        marker_color="#2b5c8f",
+                        text=df_semanal["Cant_Maquinas"],
+                        textposition="auto",
+                    ),
+                    secondary_y=False,
+                )
+
+                # Línea: % Promedio de AutoTrac
+                fig_semanal.add_trace(
+                    go.Scatter(
+                        x=df_semanal["Semana_Str"],
+                        y=df_semanal["Promedio_AutoTrac"],
+                        name="% Promedio AutoTrac™",
+                        mode="lines+markers+text",
+                        line=dict(color="#367c2b", width=3),
+                        marker=dict(size=8),
+                        text=df_semanal["Promedio_AutoTrac"].apply(
+                            lambda x: f"{x:.1f}%"
+                        ),
+                        textposition="top center",
+                    ),
+                    secondary_y=True,
+                )
+
+                fig_semanal.update_layout(
+                    title="📅 Tendencia Semanal: Equipos Activos vs. % de Adopción",
+                    xaxis_title="Semana",
+                    hovermode="x unified",
+                    legend=dict(
+                        orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                    ),
+                    margin=dict(t=50, b=40, l=10, r=10),
+                )
+
+                fig_semanal.update_yaxes(
+                    title_text="Cantidad de Máquinas", secondary_y=False
+                )
+                fig_semanal.update_yaxes(
+                    title_text="% Promedio AutoTrac™",
+                    secondary_y=True,
+                    range=[0, 110],
+                )
+
+                st.plotly_chart(fig_semanal, use_container_width=True)
             else:
-              st.info(
-                  "No se registraron equipos con uso de AutoTrac™ ≥ 1% en el"
-                  " período seleccionado."
-              )
-          else:
+                st.info(
+                    "No se registraron equipos con uso de AutoTrac™ ≥ 1% en el"
+                    " período seleccionado."
+                )
+        else:
             st.info("No existen fechas válidas registradas para agrupar por semana.")
           
     else:
