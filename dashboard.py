@@ -408,158 +408,158 @@ with tabs[0]:
 
         st.dataframe(styled_df, use_container_width=True)
 
-# --- 7. ANÁLISIS DEL ESTADO DE PUKS (LICENCIAS RENOVABLES) ---
-    st.markdown("---")
-    st.subheader("📦 Análisis del Estado de Kits PUK (Licencias Renovables)")
-    st.caption(
-        "Los PUKs incluyen licencias **Renovable Esencial** y **Renovable"
-        " Avanzada**, las cuales requieren estar activas para operar"
-        " AutoTrac™."
-    )
-
-    # Función para identificar licencias PUK
-    def es_licencia_puk(lic_val):
-      if pd.isna(lic_val):
-        return False
-      val_str = str(lic_val).lower().strip()
-      return (
-          ("renovable" in val_str)
-          or ("esencial" in val_str)
-          or ("escencial" in val_str)
-          or ("avanzada" in val_str)
-      )
-
-    # Normalización del tipo para leyenda y agrupaciones
-    def normalizar_tipo_puk(lic_val):
-      val_str = str(lic_val).lower()
-      if "avanzada" in val_str:
-        return "Renovable Avanzada"
-      return "Renovable Esencial"
-
-    # Filtrar máquinas únicas que posean PUK
-    df_puk = df_promedios[
-        df_promedios["Licencia"].apply(es_licencia_puk)
-    ].copy()
-
-    if not df_puk.empty:
-      df_puk["Fecha_venc_dt"] = pd.to_datetime(
-          df_puk["Vencimiento Licencia"], format="%d/%m/%Y", errors="coerce"
-      )
-      df_puk["Tipo_PUK"] = df_puk["Licencia"].apply(normalizar_tipo_puk)
-
-      # Fechas de referencia para cálculos
-      hoy = pd.Timestamp.today().normalize()
-      proximo_mes = hoy + pd.Timedelta(days=30)
-
-      # --- CÁLCULO DE KPIS PUK ---
-      if "Estado Licencia" in df_puk.columns:
-        estado_clean = df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
-        
-        puk_activas = df_puk[estado_clean == "vigente"]
-        
-        # Considera licencias vencidas y equipos con "No tiene"
-        puk_vencidas = df_puk[
-            (estado_clean.str.contains("vencid", na=False)) | 
-            (estado_clean.str.contains("no tiene", na=False))
-        ]
-      else:
-        puk_activas = df_puk[df_puk["Fecha_venc_dt"] >= hoy]
-        puk_vencidas = df_puk[
-            (df_puk["Fecha_venc_dt"] < hoy) | 
-            (df_puk["Vencimiento Licencia"] == "-")
-        ]
-
-      puk_por_vencer = df_puk[
-          (df_puk["Fecha_venc_dt"] >= hoy)
-          & (df_puk["Fecha_venc_dt"] <= proximo_mes)
-      ]
-
-      col_puk1, col_puk2, col_puk3 = st.columns(3)
-
-      with col_puk1:
-        st.metric(label="🟢 Licencias Activas (PUK)", value=len(puk_activas))
-
-      with col_puk2:
-        st.metric(label="🔴 Licencias Vencidas / Sin Lic. (PUK)", value=len(puk_vencidas))
-
-      with col_puk3:
-        st.metric(
-            label="⚠️ Por Vencer Próximo Mes", value=len(puk_por_vencer)
+    # --- 7. ANÁLISIS DEL ESTADO DE PUKS (LICENCIAS RENOVABLES) ---
+        st.markdown("---")
+        st.subheader("📦 Análisis del Estado de Kits PUK (Licencias Renovables)")
+        st.caption(
+            "Los PUKs incluyen licencias **Renovable Esencial** y **Renovable"
+            " Avanzada**, las cuales requieren estar activas para operar"
+            " AutoTrac™."
         )
-
-      # --- GRÁFICO DE VENCIMIENTOS EN EL TIEMPO ---
-      df_puk_chart = df_puk.dropna(subset=["Fecha_venc_dt"]).copy()
-
-      if not df_puk_chart.empty:
-        df_puk_chart["Año_Mes"] = (
-            df_puk_chart["Fecha_venc_dt"].dt.to_period("M").astype(str)
-        )
-
-        df_grouped = (
-            df_puk_chart.groupby(["Año_Mes", "Tipo_PUK"])
-            .size()
-            .reset_index(name="Cantidad")
-        )
-        df_grouped = df_grouped.sort_values("Año_Mes")
-
-        fig_puk = px.bar(
-            df_grouped,
-            x="Año_Mes",
-            y="Cantidad",
-            color="Tipo_PUK",
-            barmode="group",
-            title="📅 Cronograma Histórico y Futuro de Vencimientos PUK",
-            labels={
-                "Año_Mes": "Mes de Vencimiento",
-                "Cantidad": "Cantidad de Licencias",
-                "Tipo_PUK": "Tipo de Licencia",
-            },
-            color_discrete_map={
-                "Renovable Esencial": "#2b5c8f",
-                "Renovable Avanzada": "#367c2b",
-            },
-            text="Cantidad",
-        )
-
-        fig_puk.update_layout(
-            xaxis_type="category",
-            xaxis_title="Mes de Vencimiento",
-            yaxis_title="Cantidad de Licencias",
-            legend_title_text="Tipo de PUK",
-            hovermode="x unified",
-        )
-
-        st.plotly_chart(fig_puk, use_container_width=True)
-      else:
-        st.info(
-            "No hay fechas de vencimiento válidas registradas para graficar."
-        )
-
-      # --- TABLA DETALLE DE PUKS ---
-      st.markdown("##### 📋 Detalle de Equipos con Licencia PUK")
-
-      df_puk_display = df_puk.sort_values(
-          by="Fecha_venc_dt", ascending=True, na_position="last"
-      )[cols_display]
-
-      styled_puk = df_puk_display.style
-
-      if hasattr(styled_puk, "map"):
-        styled_puk = styled_puk.map(
-            colorear_evolucion, subset=["Evolución AutoTrac"]
-        ).map(colorear_estado_licencia, subset=["Estado Licencia"])
-      else:
-        styled_puk = styled_puk.applymap(
-            colorear_evolucion, subset=["Evolución AutoTrac"]
-        ).applymap(colorear_estado_licencia, subset=["Estado Licencia"])
-
-      st.dataframe(styled_puk, use_container_width=True)
-
-    else:
-      st.info(
-          "ℹ️ No se encontraron máquinas con licencias PUK (Renovable"
-          " Esencial / Avanzada) para los filtros seleccionados."
-      )
+    
+        # Función para identificar licencias PUK
+        def es_licencia_puk(lic_val):
+          if pd.isna(lic_val):
+            return False
+          val_str = str(lic_val).lower().strip()
+          return (
+              ("renovable" in val_str)
+              or ("esencial" in val_str)
+              or ("escencial" in val_str)
+              or ("avanzada" in val_str)
+          )
+    
+        # Normalización del tipo para leyenda y agrupaciones
+        def normalizar_tipo_puk(lic_val):
+          val_str = str(lic_val).lower()
+          if "avanzada" in val_str:
+            return "Renovable Avanzada"
+          return "Renovable Esencial"
+    
+        # Filtrar máquinas únicas que posean PUK
+        df_puk = df_promedios[
+            df_promedios["Licencia"].apply(es_licencia_puk)
+        ].copy()
+    
+        if not df_puk.empty:
+          df_puk["Fecha_venc_dt"] = pd.to_datetime(
+              df_puk["Vencimiento Licencia"], format="%d/%m/%Y", errors="coerce"
+          )
+          df_puk["Tipo_PUK"] = df_puk["Licencia"].apply(normalizar_tipo_puk)
+    
+          # Fechas de referencia para cálculos
+          hoy = pd.Timestamp.today().normalize()
+          proximo_mes = hoy + pd.Timedelta(days=30)
+    
+          # --- CÁLCULO DE KPIS PUK ---
+          if "Estado Licencia" in df_puk.columns:
+            estado_clean = df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
+            
+            puk_activas = df_puk[estado_clean == "vigente"]
+            
+            # Considera licencias vencidas y equipos con "No tiene"
+            puk_vencidas = df_puk[
+                (estado_clean.str.contains("vencid", na=False)) | 
+                (estado_clean.str.contains("no tiene", na=False))
+            ]
+          else:
+            puk_activas = df_puk[df_puk["Fecha_venc_dt"] >= hoy]
+            puk_vencidas = df_puk[
+                (df_puk["Fecha_venc_dt"] < hoy) | 
+                (df_puk["Vencimiento Licencia"] == "-")
+            ]
+    
+          puk_por_vencer = df_puk[
+              (df_puk["Fecha_venc_dt"] >= hoy)
+              & (df_puk["Fecha_venc_dt"] <= proximo_mes)
+          ]
+    
+          col_puk1, col_puk2, col_puk3 = st.columns(3)
+    
+          with col_puk1:
+            st.metric(label="🟢 Licencias Activas (PUK)", value=len(puk_activas))
+    
+          with col_puk2:
+            st.metric(label="🔴 Licencias Vencidas / Sin Lic. (PUK)", value=len(puk_vencidas))
+    
+          with col_puk3:
+            st.metric(
+                label="⚠️ Por Vencer Próximo Mes", value=len(puk_por_vencer)
+            )
+    
+          # --- GRÁFICO DE VENCIMIENTOS EN EL TIEMPO ---
+          df_puk_chart = df_puk.dropna(subset=["Fecha_venc_dt"]).copy()
+    
+          if not df_puk_chart.empty:
+            df_puk_chart["Año_Mes"] = (
+                df_puk_chart["Fecha_venc_dt"].dt.to_period("M").astype(str)
+            )
+    
+            df_grouped = (
+                df_puk_chart.groupby(["Año_Mes", "Tipo_PUK"])
+                .size()
+                .reset_index(name="Cantidad")
+            )
+            df_grouped = df_grouped.sort_values("Año_Mes")
+    
+            fig_puk = px.bar(
+                df_grouped,
+                x="Año_Mes",
+                y="Cantidad",
+                color="Tipo_PUK",
+                barmode="group",
+                title="📅 Cronograma Histórico y Futuro de Vencimientos PUK",
+                labels={
+                    "Año_Mes": "Mes de Vencimiento",
+                    "Cantidad": "Cantidad de Licencias",
+                    "Tipo_PUK": "Tipo de Licencia",
+                },
+                color_discrete_map={
+                    "Renovable Esencial": "#2b5c8f",
+                    "Renovable Avanzada": "#367c2b",
+                },
+                text="Cantidad",
+            )
+    
+            fig_puk.update_layout(
+                xaxis_type="category",
+                xaxis_title="Mes de Vencimiento",
+                yaxis_title="Cantidad de Licencias",
+                legend_title_text="Tipo de PUK",
+                hovermode="x unified",
+            )
+    
+            st.plotly_chart(fig_puk, use_container_width=True)
+          else:
+            st.info(
+                "No hay fechas de vencimiento válidas registradas para graficar."
+            )
+    
+          # --- TABLA DETALLE DE PUKS ---
+          st.markdown("##### 📋 Detalle de Equipos con Licencia PUK")
+    
+          df_puk_display = df_puk.sort_values(
+              by="Fecha_venc_dt", ascending=True, na_position="last"
+          )[cols_display]
+    
+          styled_puk = df_puk_display.style
+    
+          if hasattr(styled_puk, "map"):
+            styled_puk = styled_puk.map(
+                colorear_evolucion, subset=["Evolución AutoTrac"]
+            ).map(colorear_estado_licencia, subset=["Estado Licencia"])
+          else:
+            styled_puk = styled_puk.applymap(
+                colorear_evolucion, subset=["Evolución AutoTrac"]
+            ).applymap(colorear_estado_licencia, subset=["Estado Licencia"])
+    
+          st.dataframe(styled_puk, use_container_width=True)
+    
+        else:
+          st.info(
+              "ℹ️ No se encontraron máquinas con licencias PUK (Renovable"
+              " Esencial / Avanzada) para los filtros seleccionados."
+          )
     else:
         st.write(
             "No hay máquinas aptas con datos disponibles para mostrar en la tabla."
