@@ -55,6 +55,9 @@ df_raw['Fecha_fin_dt'] = pd.to_datetime(df_raw['Fecha de terminación'], dayfirs
 if 'AutoTrac™ Activo' in df_raw.columns:
     df_raw['AutoTrac™ Activo'] = pd.to_numeric(df_raw['AutoTrac™ Activo'], errors='coerce')
 
+# Identificación de la columna Licencia
+col_licencia = 'Licencia' if 'Licencia' in df_raw.columns else ('licencia' if 'licencia' in df_raw.columns else None)
+
 # Identificación de pantallas aptas (versión >= 23.3)
 df_raw['es_valida'] = df_raw['Versión Software Monitor'].apply(es_version_valida)
 
@@ -79,6 +82,13 @@ sel_razon = st.sidebar.selectbox("Razón Social", razones)
 # Filtro: Tipo de Máquina
 tipos = ["Todos"] + sorted([t for t in df_sidebar['Tipo'].dropna().unique() if str(t).strip() != ''])
 sel_tipo = st.sidebar.selectbox("Tipo de Máquina", tipos)
+
+# Filtro: Licencia
+if col_licencia:
+    licencias = ["Todas"] + sorted([l for l in df_sidebar[col_licencia].dropna().unique() if str(l).strip() != ''])
+    sel_licencia = st.sidebar.selectbox("Licencia", licencias)
+else:
+    sel_licencia = "Todas"
 
 # Filtro: Slider Período de Análisis
 fecha_min = df_sidebar['Fecha_inicio_dt'].min()
@@ -106,6 +116,9 @@ if sel_razon != "Todas":
 
 if sel_tipo != "Todos":
     df_filtrado_raw = df_filtrado_raw[df_filtrado_raw['Tipo'] == sel_tipo]
+
+if col_licencia and sel_licencia != "Todas":
+    df_filtrado_raw = df_filtrado_raw[df_filtrado_raw[col_licencia] == sel_licencia]
 
 if rango_fechas:
     df_filtrado_raw = df_filtrado_raw[
@@ -167,13 +180,29 @@ with tabs[0]:
     st.subheader("📊 Promedio de Uso de AutoTrac™ por Máquina")
     
     if not df_filtrado_aptas.empty:
-        # Columna auxiliar para el promedio asignando NaN a los valores < 1% (evita alterar los promedios)
+        # Columna auxiliar para el promedio (asigna None a los < 1%)
         df_filtrado_aptas.loc[:, 'AutoTrac_Filtrado'] = df_filtrado_aptas['AutoTrac™ Activo'].apply(
             lambda x: x if (pd.notna(x) and x >= 1) else None
         )
 
+        # Determinar el período de la última semana de análisis
+        max_fecha_analisis = df_filtrado_aptas['Fecha_fin_dt'].max()
+        inicio_ult_semana = max_fecha_analisis - pd.Timedelta(days=7) if pd.notna(max_fecha_analisis) else None
+
+        if inicio_ult_semana:
+            df_filtrado_aptas.loc[:, 'es_ult_semana'] = df_filtrado_aptas['Fecha_fin_dt'] >= inicio_ult_semana
+            df_ult_semana = df_filtrado_aptas[df_filtrado_aptas['es_ult_semana']].groupby('Máquina')['AutoTrac_Filtrado'].mean().reset_index()
+            df_ult_semana.rename(columns={'AutoTrac_Filtrado': 'Promedio_Ultima_Semana'}, inplace=True)
+        else:
+            df_ult_semana = pd.DataFrame(columns=['Máquina', 'Promedio_Ultima_Semana'])
+
+        # Agrupación por máquina
+        group_cols = ['Máquina', 'Tipo', 'Organización', 'Sucursal']
+        if col_licencia and col_licencia in df_filtrado_aptas.columns:
+            group_cols.append(col_licencia)
+
         df_promedios = df_filtrado_aptas.groupby(
-            ['Máquina', 'Tipo', 'Organización', 'Sucursal'],
+            group_cols,
             dropna=False,
             as_index=False
         ).agg(
@@ -182,18 +211,47 @@ with tabs[0]:
             Total_Períodos=('Fecha_inicio_dt', 'count')
         )
 
+        # Merge con el promedio de la última semana
+        df_promedios = pd.merge(df_promedios, df_ult_semana, on='Máquina', how='left')
+
+        # Lógica de Evolución AutoTrac
+        def evaluar_evolucion(row):
+            prom_gen = row['Promedio_AutoTrac']
+            prom_ult = row['Promedio_Ultima_Semana']
+            
+            if pd.isna(prom_gen) or pd.isna(prom_ult):
+                return "⚪ Sin datos últ. semana"
+            
+            diff = prom_ult - prom_gen
+            if diff > 0.05:
+                return f"🟢 Genial (+{diff:.2f}%)"
+            elif diff < -0.05:
+                return f"🔴 Peligro ({diff:.2f}%)"
+            else:
+                return "➡️ Estable (0.00%)"
+
+        df_promedios['Evolución AutoTrac'] = df_promedios.apply(evaluar_evolucion, axis=1)
+
         # Formateo como porcentaje
         df_promedios['AutoTrac™ Promedio (%)'] = df_promedios['Promedio_AutoTrac'].apply(
             lambda x: f"{x:.2f}%" if pd.notna(x) else "Sin Registros ( < 1% )"
         )
 
-        # Ordenar de mayor a menor según el uso de AutoTrac
+        # Manejo de nombre de Licencia
+        if col_licencia and col_licencia in df_promedios.columns:
+            df_promedios['Licencia'] = df_promedios[col_licencia].fillna('-')
+        else:
+            df_promedios['Licencia'] = '-'
+
+        # Selección y ordenamiento final de columnas
+        cols_display = [
+            'Máquina', 'Tipo', 'Organización', 'Sucursal', 
+            'AutoTrac™ Promedio (%)', 'Evolución AutoTrac', 'Licencia'
+        ]
+
         df_promedios_display = df_promedios.sort_values(
             by='Promedio_AutoTrac', ascending=False, na_position='last'
-        )[[
-            'Máquina', 'Tipo', 'Organización', 'Sucursal', 
-            'AutoTrac™ Promedio (%)', 'Períodos_Con_Uso', 'Total_Períodos'
-        ]]
+        )[cols_display]
 
         st.dataframe(df_promedios_display, use_container_width=True)
     else:
