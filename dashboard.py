@@ -250,10 +250,22 @@ if not df_filtrado_aptas.empty:
             columns=["Máquina", "Promedio_Ultima_Semana"]
         )
 
-    # Agrupación por máquina
-    group_cols = ["Máquina", "Tipo", "Organización", "Sucursal"]
+    # Extraer el último dato del período para Sucursal, Licencia y Fin Licenicia
+    cols_ultimos = ["Máquina", "Sucursal"]
     if col_licencia and col_licencia in df_filtrado_aptas.columns:
-        group_cols.append(col_licencia)
+        cols_ultimos.append(col_licencia)
+    if "Fin Licenicia" in df_filtrado_aptas.columns:
+        cols_ultimos.append("Fin Licenicia")
+
+    df_ultimos_datos = (
+        df_filtrado_aptas.sort_values("Fecha_fin_dt")
+        .groupby("Máquina")[cols_ultimos]
+        .last()
+        .reset_index()
+    )
+
+    # Agrupación base solo por atributos fijos de la máquina
+    group_cols = ["Máquina", "Tipo", "Organización"]
 
     df_promedios = df_filtrado_aptas.groupby(
         group_cols, dropna=False, as_index=False
@@ -261,6 +273,11 @@ if not df_filtrado_aptas.empty:
         Promedio_AutoTrac=("AutoTrac_Filtrado", "mean"),
         Períodos_Con_Uso=("AutoTrac_Filtrado", "count"),
         Total_Períodos=("Fecha_inicio_dt", "count"),
+    )
+
+    # Merge con los últimos datos registrados del período (Sucursal, Licencia, Fin Licenicia)
+    df_promedios = pd.merge(
+        df_promedios, df_ultimos_datos, on="Máquina", how="left"
     )
 
     # Merge con el promedio de la última semana
@@ -299,6 +316,14 @@ if not df_filtrado_aptas.empty:
     else:
         df_promedios["Licencia"] = "-"
 
+    # Manejo y formateo de la fecha de vencimiento
+    if "Fin Licenicia" in df_promedios.columns:
+        df_promedios["Vencimiento Licencia"] = pd.to_datetime(
+            df_promedios["Fin Licenicia"], errors="coerce"
+        ).dt.strftime("%d/%m/%Y").fillna("-")
+    else:
+        df_promedios["Vencimiento Licencia"] = "-"
+
     # Selección y ordenamiento final de columnas
     cols_display = [
         "Máquina",
@@ -308,6 +333,7 @@ if not df_filtrado_aptas.empty:
         "AutoTrac™ Promedio (%)",
         "Evolución AutoTrac",
         "Licencia",
+        "Vencimiento Licencia",
     ]
 
     df_promedios_display = df_promedios.sort_values(
