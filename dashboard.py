@@ -48,14 +48,20 @@ except Exception as e:
     st.error(f"❌ Error al conectar con la base de datos en GitHub (`s-dagatti/uso-tec-v2`): {e}")
     st.stop()
 
-# Conversión de fechas de la serie histórica
-df_raw['Fecha_dt'] = pd.to_datetime(df_raw['Fecha de terminación'], dayfirst=True, errors='coerce')
+# Conversión de fechas (Inicio y Terminación)
+df_raw['Fecha_inicio_dt'] = pd.to_datetime(df_raw['Fecha de inicio'], dayfirst=True, errors='coerce')
+df_raw['Fecha_fin_dt'] = pd.to_datetime(df_raw['Fecha de terminación'], dayfirst=True, errors='coerce')
 
 # Filtrado inicial: Solo pantallas con versión >= 23.3
 df_base = df_raw[df_raw['Versión Software Monitor'].apply(es_version_valida)].copy()
 
 # --- 4. SIDEBAR (FILTROS) ---
 st.sidebar.header("🔍 Filtros de Análisis")
+
+# Checkbox: Excluir CONCI SA
+excluir_conci = st.sidebar.checkbox("Excluir valores de CONCI SA", value=False)
+if excluir_conci:
+    df_base = df_base[~df_base['Organización'].fillna('').str.upper().str.contains('CONCI SA')].copy()
 
 # Filtro: Sucursal
 sucursales = ["Todas"] + sorted([s for s in df_base['Sucursal'].dropna().unique() if str(s).strip() != ''])
@@ -69,13 +75,13 @@ sel_razon = st.sidebar.selectbox("Razón Social", razones)
 tipos = ["Todos"] + sorted([t for t in df_base['Tipo'].dropna().unique() if str(t).strip() != ''])
 sel_tipo = st.sidebar.selectbox("Tipo de Máquina", tipos)
 
-# Filtro: Slider Fecha de Terminación
-fecha_min = df_base['Fecha_dt'].min()
-fecha_max = df_base['Fecha_dt'].max()
+# Filtro: Slider Período de Análisis (Comprendido entre la fecha de inicio mínima y la de terminación máxima)
+fecha_min = df_base['Fecha_inicio_dt'].min()
+fecha_max = df_base['Fecha_fin_dt'].max()
 
 if pd.notna(fecha_min) and pd.notna(fecha_max):
     rango_fechas = st.sidebar.slider(
-        "Fecha de Terminación",
+        "Período de Análisis",
         min_value=fecha_min.date(),
         max_value=fecha_max.date(),
         value=(fecha_min.date(), fecha_max.date()),
@@ -98,8 +104,8 @@ if sel_tipo != "Todos":
 
 if rango_fechas:
     df_filtrado = df_filtrado[
-        (df_filtrado['Fecha_dt'].dt.date >= rango_fechas[0]) & 
-        (df_filtrado['Fecha_dt'].dt.date <= rango_fechas[1])
+        (df_filtrado['Fecha_inicio_dt'].dt.date >= rango_fechas[0]) & 
+        (df_filtrado['Fecha_fin_dt'].dt.date <= rango_fechas[1])
     ]
 
 # --- 6. PESTAÑA: USO DE AUTOTRAC ---
@@ -107,7 +113,15 @@ tab_autotrac, = st.tabs(["🎯 Uso de AutoTrac"])
 
 with tab_autotrac:
     st.title("🎯 Uso de AutoTrac™")
-    st.caption("Promedio histórico de adopción para monitores con versión de software **23.3 o superior**.")
+    st.caption("Promedio de adopción para monitores con versión de software **23.3 o superior**.")
+
+    # --- PERÍODO EVALUADO (ARRIBA DE LOS KPIS) ---
+    if not df_filtrado.empty:
+        primera_fecha = df_filtrado['Fecha_inicio_dt'].min().strftime('%d/%m/%Y')
+        ultima_fecha = df_filtrado['Fecha_fin_dt'].max().strftime('%d/%m/%Y')
+        st.info(f"🗓️ **Período Evaluado:** Desde **{primera_fecha}** hasta **{ultima_fecha}**")
+    else:
+        st.warning("⚠️ No existen datos para los filtros seleccionados en el período indicado.")
 
     # Cálculo del promedio excluyendo valores nulos
     serie_autotrac = df_filtrado['AutoTrac™ Activo'].dropna()
@@ -142,12 +156,34 @@ with tab_autotrac:
 
     st.markdown("---")
 
-    # Tabla de Detalle
-    st.subheader("📋 Registros Filtrados")
-    st.dataframe(
-        df_filtrado[[
+    # --- TABLA RESUMEN POR MÁQUINA (PROMEDIO DEL PERÍODO) ---
+    st.subheader("📊 Promedio de Uso de AutoTrac™ por Máquina")
+    
+    if not df_filtrado.empty:
+        # Agrupación para calcular el promedio por máquina en el período filtrado
+        df_promedios = df_filtrado.groupby(
+            ['Máquina', 'Tipo', 'Organización', 'Sucursal'],
+            dropna=False,
+            as_index=False
+        ).agg(
+            Promedio_AutoTrac=('AutoTrac™ Activo', 'mean'),
+            Períodos_Con_Datos=('AutoTrac™ Activo', 'count'),
+            Total_Períodos=('Fecha_inicio_dt', 'count')
+        )
+
+        # Formateo como porcentaje
+        df_promedios['AutoTrac™ Promedio (%)'] = df_promedios['Promedio_AutoTrac'].apply(
+            lambda x: f"{x:.2f}%" if pd.notna(x) else "Sin Registros"
+        )
+
+        # Ordenar de mayor a menor según el uso de AutoTrac
+        df_promedios_display = df_promedios.sort_values(
+            by='Promedio_AutoTrac', ascending=False, na_position='last'
+        )[[
             'Máquina', 'Tipo', 'Organización', 'Sucursal', 
-            'Fecha de terminación', 'AutoTrac™ Activo', 'Versión Software Monitor'
-        ]],
-        use_container_width=True
-    )
+            'AutoTrac™ Promedio (%)', 'Períodos_Con_Datos', 'Total_Períodos'
+        ]]
+
+        st.dataframe(df_promedios_display, use_container_width=True)
+    else:
+        st.write("No hay datos disponibles para mostrar en la tabla.")
