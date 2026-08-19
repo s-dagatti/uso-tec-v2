@@ -685,7 +685,7 @@ with tab_autotrac:
         # PESTAÑA: GUIADO AVANZADO
         # ==============================================================================
         with tab_guiado:
-
+    
             # Columnas exactas de Guiado Avanzado
             cols_guiado_avanzado = [
                 "AutoPath™ Activo",
@@ -705,17 +705,18 @@ with tab_autotrac:
             cols_presentes = [c for c in cols_guiado_avanzado if c in df_filtrado_raw.columns]
             
             if cols_presentes:
-                # 1. Monitores aptos (software >= 23.3) dentro del período ya filtrado por el slider
+                # 1. Monitores aptos (software >= 23.3) dentro del período seleccionado
                 df_ga = df_filtrado_raw[df_filtrado_raw["es_valida"]].copy()
             
                 if not df_ga.empty:
-                    # 2. Reemplazar valores < 1% por NaN para excluir del promedio
+                    # 2. Excluir únicamente ceros (0) y nulos (NaN). Mantiene valores > 0 (ej. 0.2%)
                     cols_clean = []
                     for col in cols_presentes:
                         clean_col = f"{col}_clean"
                         cols_clean.append(clean_col)
                         df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
-                        df_ga[clean_col] = df_ga[col].where(df_ga[col] >= 1)
+                        # Reemplazamos los 0 por NaN para que pandas los ignore en .mean()
+                        df_ga[clean_col] = df_ga[col].where(df_ga[col] > 0)
             
                     # Identificar la última semana dentro del período seleccionado
                     max_fecha_ga = df_ga["Fecha_fin_dt"].max()
@@ -728,11 +729,11 @@ with tab_autotrac:
                     )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 1: KPIS GENERALES (PROMEDIO GENERAL Y MÁQUINAS ACTIVAS)
+                    # BLOQUE 1: KPIS GENERALES
                     # ------------------------------------------------------------------
                     st.subheader("🌐 Resumen General de Guiado Avanzado")
             
-                    # A. Promedio General del Período Completo (todas las tech >= 1%)
+                    # A. Promedio General del Período Completo (todos los valores > 0)
                     vals_periodo_all = df_ga[cols_clean].to_numpy().flatten()
                     vals_periodo_valid = vals_periodo_all[pd.notna(vals_periodo_all)]
                     prom_gen_periodo = vals_periodo_valid.mean() if len(vals_periodo_valid) > 0 else None
@@ -752,7 +753,7 @@ with tab_autotrac:
                     else:
                         delta_gen_str = None
             
-                    # B. Cantidad de Máquinas Activas en el Período (al menos 1 tech >= 1%)
+                    # B. Cantidad de Máquinas Activas en el Período (al menos un registro > 0)
                     col_sn = "Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else "Máquina"
             
                     mask_periodo = df_ga[cols_clean].notna().any(axis=1)
@@ -777,7 +778,7 @@ with tab_autotrac:
             
                     with kpi_gen2:
                         st.metric(
-                            label="Máquinas Activas (Uso ≥ 1% en el período)",
+                            label="Máquinas Activas (Uso > 0% en el período)",
                             value=f"{cant_maq_periodo:,}".replace(",", "."),
                             delta=delta_maq_str,
                         )
@@ -796,7 +797,7 @@ with tab_autotrac:
                         with cols_widgets[idx]:
                             nombre_kpi = nombres_cortos.get(col, col)
             
-                            # Promedio del período completo
+                            # Promedio del período completo (ignora autom. los NaN)
                             prom_periodo = df_ga[clean_col].mean()
             
                             # Promedio de la última semana
@@ -821,7 +822,7 @@ with tab_autotrac:
                             )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS CON USO ≥ 1%)
+                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS CON USO > 0%)
                     # ------------------------------------------------------------------
                     st.markdown("---")
                     st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
@@ -838,7 +839,7 @@ with tab_autotrac:
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                        # FILTRO: Dejar únicamente máquinas que tengan datos de uso (≥ 1%)
+                        # FILTRO: Dejar únicamente máquinas que tengan datos de uso real (> 0%)
                         ap_periodo = ap_periodo[ap_periodo["AutoPath™ Activo"].notna()].copy()
             
                         if not ap_periodo.empty:
@@ -899,7 +900,7 @@ with tab_autotrac:
             
                             st.dataframe(df_final_view, use_container_width=True)
                         else:
-                            st.info("ℹ️ No se encontraron máquinas con uso registrado (≥ 1%) de AutoPath™ en el período seleccionado.")
+                            st.info("ℹ️ No se encontraron máquinas con uso registrado (> 0%) de AutoPath™ en el período seleccionado.")
             
                     else:
                         st.info("ℹ️ No se encontraron suficientes datos o columnas para armar la tabla de AutoPath™.")
