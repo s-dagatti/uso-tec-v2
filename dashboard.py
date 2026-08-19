@@ -685,7 +685,7 @@ with tab_autotrac:
         # PESTAÑA: GUIADO AVANZADO
         # ==============================================================================
         with tab_guiado:
-            
+
             # Columnas exactas de Guiado Avanzado a analizar
             cols_guiado_avanzado = [
                 "AutoPath™ Activo",
@@ -694,7 +694,6 @@ with tab_autotrac:
                 "John Deere Machine Sync Vehículo guía activo",
             ]
             
-            # Nombres cortos para visualización en las tarjetas de KPI
             nombres_cortos = {
                 "AutoPath™ Activo": "AutoPath™",
                 "Automatización de maniobras AutoTrac™ Activo": "Turn Automation",
@@ -702,75 +701,77 @@ with tab_autotrac:
                 "John Deere Machine Sync Vehículo guía activo": "Machine Sync",
             }
             
-            # Filtrar únicamente las columnas que existen en el DataFrame
             cols_presentes = [c for c in cols_guiado_avanzado if c in df_raw.columns]
             
             if cols_presentes:
-                # 1. Filtrar base por monitores aptos (versión >= 23.3)
+                # 1. Monitores aptos (software >= 23.3)
                 df_ga = df_raw[df_raw["es_valida"]].copy()
             
                 if not df_ga.empty:
-                    # 2. Definir la fecha máxima de actualización (foto de hoy)
-                    max_fecha_ga = df_ga["Fecha_fin_dt"].max()
+                    # 2. Identificar las últimas dos fechas de terminación únicas registradas
+                    fechas_disponibles = df_ga["Fecha_fin_dt"].dropna().unique()
+                    fechas_disponibles = sorted(fechas_disponibles, reverse=True)
             
-                    if pd.notna(max_fecha_ga):
-                        # Período actual (últimos 7 días) vs Período anterior (7 días previos)
-                        inicio_act = max_fecha_ga - pd.Timedelta(days=7)
-                        inicio_ant = inicio_act - pd.Timedelta(days=7)
+                    if len(fechas_disponibles) > 0:
+                        ultima_fecha = fechas_disponibles[0]
+                        fecha_anterior = fechas_disponibles[1] if len(fechas_disponibles) > 1 else None
             
-                        df_actual = df_ga[df_ga["Fecha_fin_dt"] >= inicio_act].copy()
-                        df_anterior = df_ga[
-                            (df_ga["Fecha_fin_dt"] >= inicio_ant) & (df_ga["Fecha_fin_dt"] < inicio_act)
-                        ].copy()
+                        # Filtrar datasets para las dos últimas fotos exactas
+                        df_actual = df_ga[df_ga["Fecha_fin_dt"] == ultima_fecha].copy()
+                        df_anterior = df_ga[df_ga["Fecha_fin_dt"] == fecha_anterior].copy() if fecha_anterior else pd.DataFrame()
             
-                        # --- LIMPIEZA Y FILTRADO (≥ 1%) ---
+                        # Clean & convert: considerar valores >= 1% únicamente
                         cols_clean = []
                         for col in cols_presentes:
                             clean_col = f"{col}_clean"
                             cols_clean.append(clean_col)
             
-                            # Convertir a tipo numérico
                             df_actual[col] = pd.to_numeric(df_actual[col], errors="coerce")
-                            df_anterior[col] = pd.to_numeric(df_anterior[col], errors="coerce")
-            
-                            # Reemplazar valores < 1% por NaN para excluirlos de los cálculos de promedios
                             df_actual[clean_col] = df_actual[col].where(df_actual[col] >= 1)
-                            df_anterior[clean_col] = df_anterior[col].where(df_anterior[col] >= 1)
+            
+                            if not df_anterior.empty:
+                                df_anterior[col] = pd.to_numeric(df_anterior[col], errors="coerce")
+                                df_anterior[clean_col] = df_anterior[col].where(df_anterior[col] >= 1)
             
                         # ------------------------------------------------------------------
-                        # BLOQUE 1: KPIS GENERALES (PROMEDIO GENERAL Y MÁQUINAS ACTIVAS)
+                        # BLOQUE 1: KPIS GENERALES
                         # ------------------------------------------------------------------
                         st.subheader("🌐 Resumen General de Guiado Avanzado")
+                        st.caption(f"Última actualización: **{pd.to_datetime(ultima_fecha).strftime('%d/%m/%Y')}**")
             
-                        # A. Promedio General de Uso (todas las tecnologías combinadas >= 1%)
+                        # A. Promedio General de Uso (promedio entre máquinas de todas las tech >= 1%)
                         vals_act_all = df_actual[cols_clean].to_numpy().flatten()
                         vals_act_valid = vals_act_all[pd.notna(vals_act_all)]
                         prom_gen_act = vals_act_valid.mean() if len(vals_act_valid) > 0 else None
             
-                        vals_ant_all = df_anterior[cols_clean].to_numpy().flatten()
-                        vals_ant_valid = vals_ant_all[pd.notna(vals_ant_all)]
-                        prom_gen_ant = vals_ant_valid.mean() if len(vals_ant_valid) > 0 else None
+                        if not df_anterior.empty:
+                            vals_ant_all = df_anterior[cols_clean].to_numpy().flatten()
+                            vals_ant_valid = vals_ant_all[pd.notna(vals_ant_all)]
+                            prom_gen_ant = vals_ant_valid.mean() if len(vals_ant_valid) > 0 else None
+                        else:
+                            prom_gen_ant = None
             
                         val_gen_str = f"{prom_gen_act:.2f}%" if prom_gen_act is not None else "Sin Datos"
                         if prom_gen_act is not None and prom_gen_ant is not None:
                             delta_gen = prom_gen_act - prom_gen_ant
-                            delta_gen_str = f"{delta_gen:+.2f}% vs. período ant."
+                            delta_gen_str = f"{delta_gen:+.2f}% vs. fecha anterior"
                         else:
                             delta_gen_str = None
             
-                        # B. Cantidad de Máquinas Activas (al menos una tecnología >= 1%)
+                        # B. Cantidad de Máquinas Activas en la última fecha (uso >= 1% en al menos 1 tech)
                         col_sn = "Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else "Máquina"
             
                         mask_act = df_actual[cols_clean].notna().any(axis=1)
                         cant_maq_act = df_actual.loc[mask_act, col_sn].nunique() if col_sn in df_actual.columns else 0
             
-                        mask_ant = df_anterior[cols_clean].notna().any(axis=1)
-                        cant_maq_ant = df_anterior.loc[mask_ant, col_sn].nunique() if col_sn in df_anterior.columns else 0
+                        if not df_anterior.empty and col_sn in df_anterior.columns:
+                            mask_ant = df_anterior[cols_clean].notna().any(axis=1)
+                            cant_maq_ant = df_anterior.loc[mask_ant, col_sn].nunique()
+                            diff_maq = cant_maq_act - cant_maq_ant
+                            delta_maq_str = f"{diff_maq:+d} máq. vs. fecha anterior"
+                        else:
+                            delta_maq_str = None
             
-                        diff_maq = cant_maq_act - cant_maq_ant
-                        delta_maq_str = f"{diff_maq:+d} máq. vs. período ant."
-            
-                        # Despliegue de los 2 KPIs principales
                         kpi_gen1, kpi_gen2 = st.columns(2)
             
                         with kpi_gen1:
@@ -792,7 +793,7 @@ with tab_autotrac:
                         # ------------------------------------------------------------------
                         # BLOQUE 2: KPIS INDIVIDUALES POR TECNOLOGÍA
                         # ------------------------------------------------------------------
-                        st.subheader("📊 % de Uso por Tecnología (Últimos 7 días)")
+                        st.subheader("📊 % de Uso Promedio por Tecnología")
             
                         cols_widgets = st.columns(len(cols_presentes))
             
@@ -801,8 +802,9 @@ with tab_autotrac:
                             with cols_widgets[idx]:
                                 nombre_kpi = nombres_cortos.get(col, col)
             
+                                # Promedio entre máquinas en el último período
                                 val_act = df_actual[clean_col].mean()
-                                val_ant = df_anterior[clean_col].mean()
+                                val_ant = df_anterior[clean_col].mean() if not df_anterior.empty else None
             
                                 val_act_str = f"{val_act:.2f}%" if pd.notna(val_act) else "Sin Datos"
             
@@ -819,32 +821,33 @@ with tab_autotrac:
                                 )
             
                         # ------------------------------------------------------------------
-                        # BLOQUE 3: TABLA DETALLE POR MÁQUINA
+                        # BLOQUE 3: TABLA DETALLE POR MÁQUINA (ÚLTIMA FECHA DISPONIBLE)
                         # ------------------------------------------------------------------
                         st.markdown("---")
                         st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
             
-                        # Columnas base a identificar dinámicamente
                         col_maq = "Máquina" if "Máquina" in df_ga.columns else ("Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else None)
                         col_tipo = "Tipo" if "Tipo" in df_ga.columns else ("Tipo de máquina" if "Tipo de máquina" in df_ga.columns else None)
                         col_org = "Organización" if "Organización" in df_ga.columns else ("Organizacion" if "Organizacion" in df_ga.columns else None)
                         col_suc = "Sucursal" if "Sucursal" in df_ga.columns else None
             
-                        # Construir la agrupacion por máquina
                         group_keys = [c for c in [col_maq, col_tipo, col_org, col_suc] if c and c in df_ga.columns]
             
                         if group_keys and "AutoPath™ Activo" in df_ga.columns:
-                            # Calculo de promedios para AutoPath en período actual y anterior (≥ 1%)
+                            # Promedio por máquina para la última fecha
                             ap_act = df_actual.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                             ap_act.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                            ap_ant = df_anterior.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
-                            ap_ant.rename(columns={"AutoPath™ Activo_clean": "AutoPath_ant"}, inplace=True)
+                            # Promedio por máquina para la fecha anterior
+                            if not df_anterior.empty:
+                                ap_ant = df_anterior.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
+                                ap_ant.rename(columns={"AutoPath™ Activo_clean": "AutoPath_ant"}, inplace=True)
+                                df_tabla_ap = pd.merge(ap_act, ap_ant, on=group_keys, how="left")
+                            else:
+                                df_tabla_ap = ap_act
+                                df_tabla_ap["AutoPath_ant"] = np.nan
             
-                            # Merge de ambos períodos
-                            df_tabla_ap = pd.merge(ap_act, ap_ant, on=group_keys, how="outer")
-            
-                            # Calcular Evolución AutoPath
+                            # Cálculo de la evolución individual
                             def calc_evolucion(row):
                                 v_act = row["AutoPath™ Activo"]
                                 v_ant = row["AutoPath_ant"]
@@ -858,19 +861,18 @@ with tab_autotrac:
             
                             df_tabla_ap["Evolución AutoPath"] = df_tabla_ap.apply(calc_evolucion, axis=1)
             
-                            # Extraer última información de licencias registrada por máquina
+                            # Información de licencias
                             cols_lic_meta = [c for c in [col_licencia, col_fin_licencia, col_estado_licencia] if c and c in df_ga.columns]
-                            
                             if cols_lic_meta and col_maq:
                                 df_lic_last = df_ga.sort_values("Fecha_fin_dt").groupby(col_maq)[cols_lic_meta].last().reset_index()
                                 df_tabla_ap = pd.merge(df_tabla_ap, df_lic_last, on=col_maq, how="left")
             
-                            # Formatear la columna de AutoPath Activo
+                            # Formato final de %
                             df_tabla_ap["AutoPath™ Activo"] = df_tabla_ap["AutoPath™ Activo"].apply(
                                 lambda x: f"{x:.2f}%" if pd.notna(x) else "-"
                             )
             
-                            # Seleccionar y reordenar columnas finales para la vista
+                            # Selección y renombramiento de columnas
                             col_order_target = [
                                 (col_maq, "Máquina"),
                                 (col_tipo, "Tipo"),
@@ -898,7 +900,7 @@ with tab_autotrac:
                             st.info("ℹ️ No se encontraron suficientes datos o columnas para armar la tabla de AutoPath™.")
             
                     else:
-                        st.warning("⚠️ No existen fechas de término válidas para calcular el período de análisis.")
+                        st.warning("⚠️ No existen fechas de terminación válidas en la base de datos.")
             
                 else:
                     st.warning("⚠️ No se encontraron registros de monitores aptos (software ≥ 23.3).")
