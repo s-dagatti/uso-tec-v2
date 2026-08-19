@@ -349,7 +349,7 @@ with tabs[0]:
 
         if col_fin_licencia and col_fin_licencia in df_promedios.columns:
             df_promedios["Vencimiento Licencia"] = pd.to_datetime(
-                df_promedios[col_fin_licencia], errors="coerce"
+                df_promedios[col_fin_licencia], dayfirst=True, errors="coerce"
             ).dt.strftime("%d/%m/%Y").fillna("-")
         else:
             df_promedios["Vencimiento Licencia"] = "-"
@@ -410,7 +410,7 @@ with tabs[0]:
 
         st.dataframe(styled_df, use_container_width=True)
 
-        # --- 7. ANÁLISIS DEL ESTADO DE PUKS (LICENCIAS RENOVABLES) ---
+        # --- 7. ANÁLISIS DEL ESTADO DE KITS PUK (LICENCIAS RENOVABLES) ---
         st.markdown("---")
         st.subheader("📦 Análisis del Estado de Kits PUK (Licencias Renovables)")
         st.caption(
@@ -443,10 +443,17 @@ with tabs[0]:
         ].copy()
 
         if not df_puk.empty:
-            # Flexible date parsing
-            df_puk["Fecha_venc_dt"] = pd.to_datetime(
-                df_puk["Vencimiento Licencia"], dayfirst=True, errors="coerce"
+            # Parseo de fecha respetando día/mes/año (dayfirst=True)
+            col_fecha_origen = (
+                col_fin_licencia
+                if col_fin_licencia in df_puk.columns
+                else "Vencimiento Licencia"
             )
+
+            df_puk["Fecha_venc_dt"] = pd.to_datetime(
+                df_puk[col_fecha_origen], dayfirst=True, errors="coerce"
+            )
+
             df_puk["Tipo_PUK"] = df_puk["Licencia"].apply(normalizar_tipo_puk)
 
             # Fechas de referencia para cálculos
@@ -455,17 +462,19 @@ with tabs[0]:
 
             # --- CÁLCULO DE KPIS PUK ---
             if "Estado Licencia" in df_puk.columns:
-                estado_clean = df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
+                estado_clean = (
+                    df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
+                )
                 puk_activas = df_puk[estado_clean == "vigente"]
                 puk_vencidas = df_puk[
-                    (estado_clean.str.contains("vencid", na=False)) | 
-                    (estado_clean.str.contains("no tiene", na=False))
+                    (estado_clean.str.contains("vencid", na=False))
+                    | (estado_clean.str.contains("no tiene", na=False))
                 ]
             else:
                 puk_activas = df_puk[df_puk["Fecha_venc_dt"] >= hoy]
                 puk_vencidas = df_puk[
-                    (df_puk["Fecha_venc_dt"] < hoy) | 
-                    (df_puk["Vencimiento Licencia"] == "-")
+                    (df_puk["Fecha_venc_dt"] < hoy)
+                    | (df_puk["Vencimiento Licencia"] == "-")
                 ]
 
             puk_por_vencer = df_puk[
@@ -476,13 +485,20 @@ with tabs[0]:
             col_puk1, col_puk2, col_puk3 = st.columns(3)
 
             with col_puk1:
-                st.metric(label="🟢 Licencias Activas (PUK)", value=len(puk_activas))
+                st.metric(
+                    label="🟢 Licencias Activas (PUK)", value=len(puk_activas)
+                )
 
             with col_puk2:
-                st.metric(label="🔴 Licencias Vencidas / Sin Lic. (PUK)", value=len(puk_vencidas))
+                st.metric(
+                    label="🔴 Licencias Vencidas / Sin Lic. (PUK)",
+                    value=len(puk_vencidas),
+                )
 
             with col_puk3:
-                st.metric(label="⚠️ Por Vencer Próximo Mes", value=len(puk_por_vencer))
+                st.metric(
+                    label="⚠️ Por Vencer Próximo Mes", value=len(puk_por_vencer)
+                )
 
             # --- GRÁFICO DE VENCIMIENTOS EN EL TIEMPO ---
             df_puk_chart = df_puk.dropna(subset=["Fecha_venc_dt"]).copy()
@@ -528,10 +544,18 @@ with tabs[0]:
 
                 st.plotly_chart(fig_puk, use_container_width=True)
             else:
-                st.info("No hay fechas de vencimiento válidas registradas para graficar.")
+                st.info(
+                    "No hay fechas de vencimiento válidas registradas para"
+                    " graficar."
+                )
 
             # --- TABLA DETALLE DE PUKS ---
             st.markdown("##### 📋 Detalle de Equipos con Licencia PUK")
+
+            # Formatear la fecha para mostrar explícitamente en formato DD/MM/YYYY
+            df_puk["Vencimiento Licencia"] = df_puk["Fecha_venc_dt"].apply(
+                lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "-"
+            )
 
             df_puk_display = df_puk.sort_values(
                 by="Fecha_venc_dt", ascending=True, na_position="last"
