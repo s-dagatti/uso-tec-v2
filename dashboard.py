@@ -685,6 +685,7 @@ with tab_autotrac:
         # PESTAÑA: GUIADO AVANZADO
         # ==============================================================================
         with tab_guiado:
+            
             # Columnas exactas de Guiado Avanzado a analizar
             cols_guiado_avanzado = [
                 "AutoPath™ Activo",
@@ -816,6 +817,85 @@ with tab_autotrac:
                                     value=val_act_str,
                                     delta=delta_str,
                                 )
+            
+                        # ------------------------------------------------------------------
+                        # BLOQUE 3: TABLA DETALLE POR MÁQUINA
+                        # ------------------------------------------------------------------
+                        st.markdown("---")
+                        st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
+            
+                        # Columnas base a identificar dinámicamente
+                        col_maq = "Máquina" if "Máquina" in df_ga.columns else ("Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else None)
+                        col_tipo = "Tipo" if "Tipo" in df_ga.columns else ("Tipo de máquina" if "Tipo de máquina" in df_ga.columns else None)
+                        col_org = "Organización" if "Organización" in df_ga.columns else ("Organizacion" if "Organizacion" in df_ga.columns else None)
+                        col_suc = "Sucursal" if "Sucursal" in df_ga.columns else None
+            
+                        # Construir la agrupacion por máquina
+                        group_keys = [c for c in [col_maq, col_tipo, col_org, col_suc] if c and c in df_ga.columns]
+            
+                        if group_keys and "AutoPath™ Activo" in df_ga.columns:
+                            # Calculo de promedios para AutoPath en período actual y anterior (≥ 1%)
+                            ap_act = df_actual.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
+                            ap_act.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
+            
+                            ap_ant = df_anterior.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
+                            ap_ant.rename(columns={"AutoPath™ Activo_clean": "AutoPath_ant"}, inplace=True)
+            
+                            # Merge de ambos períodos
+                            df_tabla_ap = pd.merge(ap_act, ap_ant, on=group_keys, how="outer")
+            
+                            # Calcular Evolución AutoPath
+                            def calc_evolucion(row):
+                                v_act = row["AutoPath™ Activo"]
+                                v_ant = row["AutoPath_ant"]
+                                if pd.notna(v_act) and pd.notna(v_ant):
+                                    diff = v_act - v_ant
+                                    return f"{diff:+.2f}%"
+                                elif pd.notna(v_act):
+                                    return "Nuevo"
+                                else:
+                                    return "-"
+            
+                            df_tabla_ap["Evolución AutoPath"] = df_tabla_ap.apply(calc_evolucion, axis=1)
+            
+                            # Extraer última información de licencias registrada por máquina
+                            cols_lic_meta = [c for c in [col_licencia, col_fin_licencia, col_estado_licencia] if c and c in df_ga.columns]
+                            
+                            if cols_lic_meta and col_maq:
+                                df_lic_last = df_ga.sort_values("Fecha_fin_dt").groupby(col_maq)[cols_lic_meta].last().reset_index()
+                                df_tabla_ap = pd.merge(df_tabla_ap, df_lic_last, on=col_maq, how="left")
+            
+                            # Formatear la columna de AutoPath Activo
+                            df_tabla_ap["AutoPath™ Activo"] = df_tabla_ap["AutoPath™ Activo"].apply(
+                                lambda x: f"{x:.2f}%" if pd.notna(x) else "-"
+                            )
+            
+                            # Seleccionar y reordenar columnas finales para la vista
+                            col_order_target = [
+                                (col_maq, "Máquina"),
+                                (col_tipo, "Tipo"),
+                                (col_org, "Organización"),
+                                (col_suc, "Sucursal"),
+                                ("AutoPath™ Activo", "AutoPath™ Activo"),
+                                ("Evolución AutoPath", "Evolución AutoPath"),
+                                (col_licencia, "Licencia"),
+                                (col_fin_licencia, "Vencimiento Licencia"),
+                                (col_estado_licencia, "Estado Licencia")
+                            ]
+            
+                            cols_existentes_renombrar = {}
+                            cols_para_mostrar = []
+            
+                            for orig, dest in col_order_target:
+                                if orig and orig in df_tabla_ap.columns:
+                                    cols_para_mostrar.append(orig)
+                                    cols_existentes_renombrar[orig] = dest
+            
+                            df_final_view = df_tabla_ap[cols_para_mostrar].rename(columns=cols_existentes_renombrar)
+            
+                            st.dataframe(df_final_view, use_container_width=True)
+                        else:
+                            st.info("ℹ️ No se encontraron suficientes datos o columnas para armar la tabla de AutoPath™.")
             
                     else:
                         st.warning("⚠️ No existen fechas de término válidas para calcular el período de análisis.")
