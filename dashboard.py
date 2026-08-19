@@ -157,7 +157,7 @@ df_filtrado_autotrac = df_filtrado_aptas[
 # --- 6. PESTAÑA: USO DE AUTOTRAC ---
 tab_autotrac, tab_guiado = st.tabs(["🎯 Uso de AutoTrac", "🛰️ Guiado Avanzado"])
 
-with tabs[0]:
+with tab_autotrac:
     st.title("🎯 Uso de AutoTrac™")
     st.caption("Promedio de adopción para monitores aptos (**software ≥ 23.3**) considerando registros con **uso ≥ 1%**.")
 
@@ -684,6 +684,7 @@ with tabs[0]:
         # ==========================================
         # PESTAÑA: GUIADO AVANZADO
         # ==========================================
+        with tab_guiado:
         st.header("🎯 Análisis de Guiado Avanzado")
         st.caption(
             "Monitoreo de tecnologías avanzadas para monitores con versión de software"
