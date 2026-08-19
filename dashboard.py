@@ -685,150 +685,150 @@ with tab_autotrac:
         # PESTAÑA: GUIADO AVANZADO
         # ==========================================
         with tab_guiado:
-        st.header("🎯 Análisis de Guiado Avanzado")
-        st.caption(
-            "Monitoreo de tecnologías avanzadas para monitores con versión de software"
-            " 23.3 o superior."
-        )
-        
-        # 1. Lista de tecnologías a evaluar
-        cols_guiado = [
-            "AutoPath™ Activo",
-            "Automatización de maniobras AutoTrac™ Activo",
-            "Guiado pasivo de implemento AutoTrac™ Activo",
-            "John Deere Machine Sync Vehículo guía activo",
-        ]
-        
-        # Verificar columnas presentes en el DataFrame
-        cols_presentes = [c for c in cols_guiado if c in df_filtrado.columns]
-        
-        if not df_filtrado.empty and cols_presentes:
-            df_ga = df_filtrado.copy()
-        
-            # --- FILTRO POR VERSIÓN DE SOFTWARE (>= 23.3) ---
-            col_sw = [c for c in df_ga.columns if "software" in c.lower()]
-            if col_sw:
-                # Extrae la versión numérica principal (ej: '23.3.1' -> 23.3)
-                df_ga["sw_num"] = pd.to_numeric(
-                    df_ga[col_sw[0]].astype(str).str.extract(r"(\d+\.\d+)")[0],
-                    errors="coerce",
-                )
-                df_ga = df_ga[df_ga["sw_num"] >= 23.3]
-        
-            if not df_ga.empty:
-                # --- DETERMINACIÓN DE FOTO DE HOY Y PERÍODO ANTERIOR ---
-                max_fecha = (
-                    df_ga["Fecha_fin_dt"].max() if "Fecha_fin_dt" in df_ga.columns else None
-                )
-        
-                if pd.notna(max_fecha):
-                    inicio_ult_periodo = max_fecha - pd.Timedelta(days=7)
-                    inicio_prev_periodo = max_fecha - pd.Timedelta(days=14)
-        
-                    df_actual = df_ga[df_ga["Fecha_fin_dt"] > inicio_ult_periodo].copy()
-                    df_anterior = df_ga[
-                        (df_ga["Fecha_fin_dt"] <= inicio_ult_periodo)
-                        & (df_ga["Fecha_fin_dt"] > inicio_prev_periodo)
-                    ].copy()
-        
-                    # --- LIMPIEZA: Convertir < 1% a NaN para NO afectar promedios ---
-                    for col in cols_presentes:
-                        df_actual[f"{col}_clean"] = df_actual[col].apply(
-                            lambda x: x if (pd.notna(x) and x >= 1) else np.nan
-                        )
-                        df_anterior[f"{col}_clean"] = df_anterior[col].apply(
-                            lambda x: x if (pd.notna(x) and x >= 1) else np.nan
-                        )
-        
-                    cols_clean = [f"{col}_clean" for col in cols_presentes]
-        
-                    # --- CÁLCULO DE KPIS GENERALES ---
-                    # 1. Promedio Guiado Avanzado General (ignora NaNs)
-                    vals_act = df_actual[cols_clean].values.flatten()
-                    vals_act = vals_act[~np.isnan(vals_act)]
-                    prom_gen_act = np.mean(vals_act) if len(vals_act) > 0 else 0.0
-        
-                    vals_ant = df_anterior[cols_clean].values.flatten()
-                    vals_ant = vals_ant[~np.isnan(vals_ant)]
-                    prom_gen_ant = np.mean(vals_ant) if len(vals_ant) > 0 else 0.0
-        
-                    diff_prom_gen = prom_gen_act - prom_gen_ant
-        
-                    # 2. Cantidad de máquinas usando al menos 1 tecnología (>= 1%)
-                    maq_act = df_actual[df_actual[cols_clean].notna().any(axis=1)][
-                        "Máquina"
-                    ].nunique()
-                    maq_ant = df_anterior[df_anterior[cols_clean].notna().any(axis=1)][
-                        "Máquina"
-                    ].nunique()
-                    diff_maq = maq_act - maq_ant
-        
-                    # --- DESPLIEGUE KPIS GENERALES ---
-                    st.markdown("### 📌 Resumen General (Foto de Hoy vs. Período Anterior)")
-                    col_kpi1, col_kpi2 = st.columns(2)
-        
-                    with col_kpi1:
-                        st.metric(
-                            label="📊 Promedio Guiado Avanzado Gral.",
-                            value=f"{prom_gen_act:.2f}%" if prom_gen_act > 0 else "0.00%",
-                            delta=f"{diff_prom_gen:+.2f}% vs. ant.",
-                        )
-        
-                    with col_kpi2:
-                        st.metric(
-                            label="🚜 Máquinas Activas en Guiado Avanzado",
-                            value=f"{maq_act}",
-                            delta=f"{diff_maq:+d} máq. vs. ant.",
-                        )
-        
-                    st.markdown("---")
-                    st.markdown("### 🛠️ Uso por Tecnología")
-        
-                    # --- DESPLIEGUE KPIS INDIVIDUALES (4 COLUMNAS) ---
-                    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-                    cols_widgets = [col_t1, col_t2, col_t3, col_t4]
-        
-                    nombres_cortos = {
-                        "AutoPath™ Activo": "AutoPath™",
-                        "Automatización de maniobras AutoTrac™ Activo": "Aut. Maniobras (iTEC)",
-                        "Guiado pasivo de implemento AutoTrac™ Activo": "Guiado Pasivo Impl.",
-                        "John Deere Machine Sync Vehículo guía activo": "Machine Sync",
-                    }
-        
-                    for idx, col in enumerate(cols_guiado):
-                        with cols_widgets[idx]:
-                            if col in cols_presentes:
-                                val_act = df_actual[f"{col}_clean"].mean()
-                                val_ant = df_anterior[f"{col}_clean"].mean()
-        
-                                val_act_num = val_act if pd.notna(val_act) else 0.0
-                                val_ant_num = val_ant if pd.notna(val_ant) else 0.0
-                                diff_tech = val_act_num - val_ant_num
-        
-                                label_tech = nombres_cortos.get(col, col)
-        
-                                st.metric(
-                                    label=f"📡 {label_tech}",
-                                    value=f"{val_act:.2f}%"
-                                    if pd.notna(val_act)
-                                    else "Sin uso (<1%)",
-                                    delta=f"{diff_tech:+.2f}% vs. ant."
-                                    if (pd.notna(val_act) or pd.notna(val_ant))
-                                    else None,
-                                )
-                            else:
-                                st.metric(
-                                    label=f"📡 {nombres_cortos.get(col, col)}",
-                                    value="N/D",
-                                )
+            st.header("🎯 Análisis de Guiado Avanzado")
+            st.caption(
+                "Monitoreo de tecnologías avanzadas para monitores con versión de software"
+                " 23.3 o superior."
+            )
+            
+            # 1. Lista de tecnologías a evaluar
+            cols_guiado = [
+                "AutoPath™ Activo",
+                "Automatización de maniobras AutoTrac™ Activo",
+                "Guiado pasivo de implemento AutoTrac™ Activo",
+                "John Deere Machine Sync Vehículo guía activo",
+            ]
+            
+            # Verificar columnas presentes en el DataFrame
+            cols_presentes = [c for c in cols_guiado if c in df_filtrado.columns]
+            
+            if not df_filtrado.empty and cols_presentes:
+                df_ga = df_filtrado.copy()
+            
+                # --- FILTRO POR VERSIÓN DE SOFTWARE (>= 23.3) ---
+                col_sw = [c for c in df_ga.columns if "software" in c.lower()]
+                if col_sw:
+                    # Extrae la versión numérica principal (ej: '23.3.1' -> 23.3)
+                    df_ga["sw_num"] = pd.to_numeric(
+                        df_ga[col_sw[0]].astype(str).str.extract(r"(\d+\.\d+)")[0],
+                        errors="coerce",
+                    )
+                    df_ga = df_ga[df_ga["sw_num"] >= 23.3]
+            
+                if not df_ga.empty:
+                    # --- DETERMINACIÓN DE FOTO DE HOY Y PERÍODO ANTERIOR ---
+                    max_fecha = (
+                        df_ga["Fecha_fin_dt"].max() if "Fecha_fin_dt" in df_ga.columns else None
+                    )
+            
+                    if pd.notna(max_fecha):
+                        inicio_ult_periodo = max_fecha - pd.Timedelta(days=7)
+                        inicio_prev_periodo = max_fecha - pd.Timedelta(days=14)
+            
+                        df_actual = df_ga[df_ga["Fecha_fin_dt"] > inicio_ult_periodo].copy()
+                        df_anterior = df_ga[
+                            (df_ga["Fecha_fin_dt"] <= inicio_ult_periodo)
+                            & (df_ga["Fecha_fin_dt"] > inicio_prev_periodo)
+                        ].copy()
+            
+                        # --- LIMPIEZA: Convertir < 1% a NaN para NO afectar promedios ---
+                        for col in cols_presentes:
+                            df_actual[f"{col}_clean"] = df_actual[col].apply(
+                                lambda x: x if (pd.notna(x) and x >= 1) else np.nan
+                            )
+                            df_anterior[f"{col}_clean"] = df_anterior[col].apply(
+                                lambda x: x if (pd.notna(x) and x >= 1) else np.nan
+                            )
+            
+                        cols_clean = [f"{col}_clean" for col in cols_presentes]
+            
+                        # --- CÁLCULO DE KPIS GENERALES ---
+                        # 1. Promedio Guiado Avanzado General (ignora NaNs)
+                        vals_act = df_actual[cols_clean].values.flatten()
+                        vals_act = vals_act[~np.isnan(vals_act)]
+                        prom_gen_act = np.mean(vals_act) if len(vals_act) > 0 else 0.0
+            
+                        vals_ant = df_anterior[cols_clean].values.flatten()
+                        vals_ant = vals_ant[~np.isnan(vals_ant)]
+                        prom_gen_ant = np.mean(vals_ant) if len(vals_ant) > 0 else 0.0
+            
+                        diff_prom_gen = prom_gen_act - prom_gen_ant
+            
+                        # 2. Cantidad de máquinas usando al menos 1 tecnología (>= 1%)
+                        maq_act = df_actual[df_actual[cols_clean].notna().any(axis=1)][
+                            "Máquina"
+                        ].nunique()
+                        maq_ant = df_anterior[df_anterior[cols_clean].notna().any(axis=1)][
+                            "Máquina"
+                        ].nunique()
+                        diff_maq = maq_act - maq_ant
+            
+                        # --- DESPLIEGUE KPIS GENERALES ---
+                        st.markdown("### 📌 Resumen General (Foto de Hoy vs. Período Anterior)")
+                        col_kpi1, col_kpi2 = st.columns(2)
+            
+                        with col_kpi1:
+                            st.metric(
+                                label="📊 Promedio Guiado Avanzado Gral.",
+                                value=f"{prom_gen_act:.2f}%" if prom_gen_act > 0 else "0.00%",
+                                delta=f"{diff_prom_gen:+.2f}% vs. ant.",
+                            )
+            
+                        with col_kpi2:
+                            st.metric(
+                                label="🚜 Máquinas Activas en Guiado Avanzado",
+                                value=f"{maq_act}",
+                                delta=f"{diff_maq:+d} máq. vs. ant.",
+                            )
+            
+                        st.markdown("---")
+                        st.markdown("### 🛠️ Uso por Tecnología")
+            
+                        # --- DESPLIEGUE KPIS INDIVIDUALES (4 COLUMNAS) ---
+                        col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+                        cols_widgets = [col_t1, col_t2, col_t3, col_t4]
+            
+                        nombres_cortos = {
+                            "AutoPath™ Activo": "AutoPath™",
+                            "Automatización de maniobras AutoTrac™ Activo": "Aut. Maniobras (iTEC)",
+                            "Guiado pasivo de implemento AutoTrac™ Activo": "Guiado Pasivo Impl.",
+                            "John Deere Machine Sync Vehículo guía activo": "Machine Sync",
+                        }
+            
+                        for idx, col in enumerate(cols_guiado):
+                            with cols_widgets[idx]:
+                                if col in cols_presentes:
+                                    val_act = df_actual[f"{col}_clean"].mean()
+                                    val_ant = df_anterior[f"{col}_clean"].mean()
+            
+                                    val_act_num = val_act if pd.notna(val_act) else 0.0
+                                    val_ant_num = val_ant if pd.notna(val_ant) else 0.0
+                                    diff_tech = val_act_num - val_ant_num
+            
+                                    label_tech = nombres_cortos.get(col, col)
+            
+                                    st.metric(
+                                        label=f"📡 {label_tech}",
+                                        value=f"{val_act:.2f}%"
+                                        if pd.notna(val_act)
+                                        else "Sin uso (<1%)",
+                                        delta=f"{diff_tech:+.2f}% vs. ant."
+                                        if (pd.notna(val_act) or pd.notna(val_ant))
+                                        else None,
+                                    )
+                                else:
+                                    st.metric(
+                                        label=f"📡 {nombres_cortos.get(col, col)}",
+                                        value="N/D",
+                                    )
+                    else:
+                        st.info("No hay fechas válidas para construir la foto de hoy.")
                 else:
-                    st.info("No hay fechas válidas para construir la foto de hoy.")
+                    st.warning(
+                        "⚠️ No se encontraron equipos con versión de software 23.3 o superior."
+                    )
             else:
-                st.warning(
-                    "⚠️ No se encontraron equipos con versión de software 23.3 o superior."
-                )
-        else:
-            st.info("No hay datos disponibles para las tecnologías de Guiado Avanzado.")
+                st.info("No hay datos disponibles para las tecnologías de Guiado Avanzado.")
           
     else:
         st.write(
