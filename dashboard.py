@@ -685,7 +685,7 @@ with tab_autotrac:
         # PESTAÑA: GUIADO AVANZADO
         # ==============================================================================
         with tab_guiado:
-    
+
             # Columnas exactas de Guiado Avanzado
             cols_guiado_avanzado = [
                 "AutoPath™ Activo",
@@ -709,13 +709,12 @@ with tab_autotrac:
                 df_ga = df_filtrado_raw[df_filtrado_raw["es_valida"]].copy()
             
                 if not df_ga.empty:
-                    # 2. Excluir únicamente ceros (0) y nulos (NaN). Mantiene valores > 0 (ej. 0.2%)
+                    # 2. Excluir ceros (0) y nulos (NaN) para los promedios individuales por tecnología
                     cols_clean = []
                     for col in cols_presentes:
                         clean_col = f"{col}_clean"
                         cols_clean.append(clean_col)
                         df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
-                        # Reemplazamos los 0 por NaN para que pandas los ignore en .mean()
                         df_ga[clean_col] = df_ga[col].where(df_ga[col] > 0)
             
                     # Identificar la última semana dentro del período seleccionado
@@ -729,31 +728,36 @@ with tab_autotrac:
                     )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 1: KPIS GENERALES
+                    # BLOQUE 1: KPIS GENERALES (PROMEDIO ENTRE LAS 4 TECNOLOGÍAS)
                     # ------------------------------------------------------------------
                     st.subheader("🌐 Resumen General de Guiado Avanzado")
             
-                    # A. Promedio General del Período Completo (todos los valores > 0)
-                    vals_periodo_all = df_ga[cols_clean].to_numpy().flatten()
-                    vals_periodo_valid = vals_periodo_all[pd.notna(vals_periodo_all)]
-                    prom_gen_periodo = vals_periodo_valid.mean() if len(vals_periodo_valid) > 0 else None
+                    # Calculamos el promedio individual de cada una de las 4 columnas presentes (si no hay datos, aporta 0)
+                    medias_periodo_cols = [df_ga[c].mean() for c in cols_clean]
+                    medias_periodo_cols_num = [m if pd.notna(m) else 0.0 for m in medias_periodo_cols]
+                    
+                    # El promedio general es la suma de los promedios de las 4 tecnologías dividida siempre entre 4 (o len total esperada)
+                    prom_gen_periodo = sum(medias_periodo_cols_num) / len(cols_guiado_avanzado) if len(cols_guiado_avanzado) > 0 else None
             
-                    # Promedio General de la Última Semana
+                    # Hacemos lo mismo para la última semana
                     if not df_ga_ult_semana.empty:
-                        vals_semana_all = df_ga_ult_semana[cols_clean].to_numpy().flatten()
-                        vals_semana_valid = vals_semana_all[pd.notna(vals_semana_all)]
-                        prom_gen_semana = vals_semana_valid.mean() if len(vals_semana_valid) > 0 else None
+                        medias_semana_cols = [df_ga_ult_semana[c].mean() for c in cols_clean]
+                        medias_semana_cols_num = [m if pd.notna(m) else 0.0 for m in medias_semana_cols]
+                        prom_gen_semana = sum(medias_semana_cols_num) / len(cols_guiado_avanzado) if len(cols_guiado_avanzado) > 0 else None
                     else:
                         prom_gen_semana = None
             
-                    val_gen_str = f"{prom_gen_periodo:.2f}%" if prom_gen_periodo is not None else "Sin Datos"
-                    if prom_gen_periodo is not None and prom_gen_semana is not None:
+                    # Verificamos si al menos una tecnología tiene datos reales para mostrar el valor o "Sin Datos"
+                    tiene_datos_global = any(pd.notna(m) for m in medias_periodo_cols)
+            
+                    val_gen_str = f"{prom_gen_periodo:.2f}%" if (prom_gen_periodo is not None and tiene_datos_global) else "Sin Datos"
+                    if prom_gen_periodo is not None and prom_gen_semana is not None and tiene_datos_global:
                         delta_gen = prom_gen_semana - prom_gen_periodo
                         delta_gen_str = f"{delta_gen:+.2f}% vs. últ. semana"
                     else:
                         delta_gen_str = None
             
-                    # B. Cantidad de Máquinas Activas en el Período (al menos un registro > 0)
+                    # B. Cantidad de Máquinas Activas en el Período (al menos un registro > 0 en cualquier tech)
                     col_sn = "Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else "Máquina"
             
                     mask_periodo = df_ga[cols_clean].notna().any(axis=1)
@@ -797,10 +801,7 @@ with tab_autotrac:
                         with cols_widgets[idx]:
                             nombre_kpi = nombres_cortos.get(col, col)
             
-                            # Promedio del período completo (ignora autom. los NaN)
                             prom_periodo = df_ga[clean_col].mean()
-            
-                            # Promedio de la última semana
                             prom_semana = (
                                 df_ga_ult_semana[clean_col].mean()
                                 if not df_ga_ult_semana.empty
@@ -835,15 +836,12 @@ with tab_autotrac:
                     group_keys = [c for c in [col_maq, col_tipo, col_org, col_suc] if c and c in df_ga.columns]
             
                     if group_keys and "AutoPath™ Activo" in df_ga.columns:
-                        # Promedio de AutoPath en todo el período por máquina
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                        # FILTRO: Dejar únicamente máquinas que tengan datos de uso real (> 0%)
                         ap_periodo = ap_periodo[ap_periodo["AutoPath™ Activo"].notna()].copy()
             
                         if not ap_periodo.empty:
-                            # Promedio de AutoPath en la última semana por máquina
                             if not df_ga_ult_semana.empty:
                                 ap_semana = df_ga_ult_semana.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                                 ap_semana.rename(columns={"AutoPath™ Activo_clean": "AutoPath_semana"}, inplace=True)
@@ -852,7 +850,6 @@ with tab_autotrac:
                                 df_tabla_ap = ap_periodo
                                 df_tabla_ap["AutoPath_semana"] = np.nan
             
-                            # Cálculo de la evolución (Última Semana vs Período Completo)
                             def calc_evolucion(row):
                                 v_per = row["AutoPath™ Activo"]
                                 v_sem = row["AutoPath_semana"]
@@ -864,18 +861,15 @@ with tab_autotrac:
             
                             df_tabla_ap["Evolución AutoPath"] = df_tabla_ap.apply(calc_evolucion, axis=1)
             
-                            # Información de licencias (último registro disponible por máquina)
                             cols_lic_meta = [c for c in [col_licencia, col_fin_licencia, col_estado_licencia] if c and c in df_ga.columns]
                             if cols_lic_meta and col_maq:
                                 df_lic_last = df_ga.sort_values("Fecha_fin_dt").groupby(col_maq)[cols_lic_meta].last().reset_index()
                                 df_tabla_ap = pd.merge(df_tabla_ap, df_lic_last, on=col_maq, how="left")
             
-                            # Formato final
                             df_tabla_ap["AutoPath™ Activo"] = df_tabla_ap["AutoPath™ Activo"].apply(
                                 lambda x: f"{x:.2f}%" if pd.notna(x) else "-"
                             )
             
-                            # Selección y renombramiento de columnas para vista final
                             col_order_target = [
                                 (col_maq, "Máquina"),
                                 (col_tipo, "Tipo"),
