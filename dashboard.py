@@ -709,13 +709,12 @@ with tab_autotrac:
                 df_ga = df_filtrado_raw[df_filtrado_raw["es_valida"]].copy()
             
                 if not df_ga.empty:
-                    # 2. Excluir ceros (0) y nulos (NaN) para los promedios individuales por tecnología
+                    # 2. Convertir a numérico: Mantiene los 0 (para que promedien) y deja los nulos como NaN (para que .mean() los ignore)
                     cols_clean = []
                     for col in cols_presentes:
                         clean_col = f"{col}_clean"
                         cols_clean.append(clean_col)
-                        df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
-                        df_ga[clean_col] = df_ga[col].where(df_ga[col] > 0)
+                        df_ga[clean_col] = pd.to_numeric(df_ga[col], errors="coerce")
             
                     # Identificar la última semana dentro del período seleccionado
                     max_fecha_ga = df_ga["Fecha_fin_dt"].max()
@@ -732,14 +731,14 @@ with tab_autotrac:
                     # ------------------------------------------------------------------
                     st.subheader("🌐 Resumen General de Guiado Avanzado")
             
-                    # Calculamos el promedio individual de cada una de las 4 columnas presentes (si no hay datos, aporta 0)
+                    # Calculamos el promedio de cada tecnología (los 0 promedian, los NaN se ignoran)
                     medias_periodo_cols = [df_ga[c].mean() for c in cols_clean]
                     medias_periodo_cols_num = [m if pd.notna(m) else 0.0 for m in medias_periodo_cols]
                     
-                    # El promedio general es la suma de los promedios de las 4 tecnologías dividida siempre entre 4 (o len total esperada)
+                    # Promedio general de las 4 tecnologías
                     prom_gen_periodo = sum(medias_periodo_cols_num) / len(cols_guiado_avanzado) if len(cols_guiado_avanzado) > 0 else None
             
-                    # Hacemos lo mismo para la última semana
+                    # Lo mismo para la última semana
                     if not df_ga_ult_semana.empty:
                         medias_semana_cols = [df_ga_ult_semana[c].mean() for c in cols_clean]
                         medias_semana_cols_num = [m if pd.notna(m) else 0.0 for m in medias_semana_cols]
@@ -747,7 +746,6 @@ with tab_autotrac:
                     else:
                         prom_gen_semana = None
             
-                    # Verificamos si al menos una tecnología tiene datos reales para mostrar el valor o "Sin Datos"
                     tiene_datos_global = any(pd.notna(m) for m in medias_periodo_cols)
             
                     val_gen_str = f"{prom_gen_periodo:.2f}%" if (prom_gen_periodo is not None and tiene_datos_global) else "Sin Datos"
@@ -757,7 +755,7 @@ with tab_autotrac:
                     else:
                         delta_gen_str = None
             
-                    # B. Cantidad de Máquinas Activas en el Período (al menos un registro > 0 en cualquier tech)
+                    # B. Cantidad de Máquinas Activas en el Período (registros con datos válidos o ceros)
                     col_sn = "Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else "Máquina"
             
                     mask_periodo = df_ga[cols_clean].notna().any(axis=1)
@@ -782,7 +780,7 @@ with tab_autotrac:
             
                     with kpi_gen2:
                         st.metric(
-                            label="Máquinas Activas (Uso > 0% en el período)",
+                            label="Máquinas Activas (Con registros en el período)",
                             value=f"{cant_maq_periodo:,}".replace(",", "."),
                             delta=delta_maq_str,
                         )
@@ -823,7 +821,7 @@ with tab_autotrac:
                             )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS CON USO > 0%)
+                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS CON USO > 0)
                     # ------------------------------------------------------------------
                     st.markdown("---")
                     st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
@@ -839,7 +837,8 @@ with tab_autotrac:
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                        ap_periodo = ap_periodo[ap_periodo["AutoPath™ Activo"].notna()].copy()
+                        # FILTRO: Excluir máquinas cuyo promedio sea 0 o NaN (nunca usaron la tecnología)
+                        ap_periodo = ap_periodo[(ap_periodo["AutoPath™ Activo"].notna()) & (ap_periodo["AutoPath™ Activo"] > 0)].copy()
             
                         if not ap_periodo.empty:
                             if not df_ga_ult_semana.empty:
