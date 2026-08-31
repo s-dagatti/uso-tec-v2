@@ -665,7 +665,7 @@ with tab_autotrac:
         else:
             st.info("No existen fechas válidas registradas para agrupar por semana.")
 
-# ==============================================================================
+        # ==============================================================================
         # PESTAÑA: GUIADO AVANZADO
         # ==============================================================================
         with tab_guiado:
@@ -703,25 +703,14 @@ with tab_autotrac:
                         df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
             
                     if col_sn in df_ga.columns:
-                        # 3. FILTRO DE ACTIVIDAD REAL:
-                        # Para evitar que semanas inútiles o registros fantasma tiren el promedio al piso,
-                        # solo evaluamos el 0% en registros donde la máquina tuvo algún uso registrado (> 0) 
-                        # o pertenecen a semanas con actividad productiva de esa máquina.
+                        # 3. FILTRO DE ACTIVIDAD REAL Y ADOPCIÓN
                         df_adoptadas_mask = pd.DataFrame(index=df_ga.index)
                         
                         for col, clean_col in zip(cols_presentes, cols_clean):
-                            # Identificamos registros donde la tecnología se usó (>0) o 
-                            # bien donde la máquina ya era usuaria activa en esa ventana de tiempo.
                             val_original = df_ga[col]
-                            
-                            # Condición: si es > 0 lo dejamos; si es 0, solo lo conservamos si la máquina 
-                            # demostró uso en al menos otra semana del período (evita el 0 de máquinas totalmente paradas).
                             ha_usado_antes = df_ga.groupby(col_sn)[col].transform(lambda x: (x > 0.0).any())
                             
-                            # Si la máquina usó la tecnología alguna vez, los nulos se vuelven 0, pero descartamos 
-                            # registros totalmente vacíos o inactivos de la base.
                             df_adoptadas_mask[clean_col] = val_original.where(ha_usado_antes, np.nan)
-                            # Reemplazamos nulos por 0 solo donde hubo actividad real de la máquina
                             df_adoptadas_mask[clean_col] = df_adoptadas_mask[clean_col].apply(lambda x: 0.0 if pd.notna(x) and x == 0.0 else x)
                         
                         for clean_col in cols_clean:
@@ -843,7 +832,6 @@ with tab_autotrac:
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                        # FILTRO PARA LA TABLA: Solo mantener las máquinas con datos válidos
                         ap_periodo = ap_periodo[ap_periodo["AutoPath™ Activo"].notna()].copy()
             
                         if not ap_periodo.empty:
@@ -855,7 +843,6 @@ with tab_autotrac:
                                 df_tabla_ap = ap_periodo
                                 df_tabla_ap["AutoPath_semana"] = np.nan
             
-                            # Guardamos la diferencia numérica pura para aplicar los estilos después
                             def calc_dif_num(row):
                                 v_per = row["AutoPath™ Activo"]
                                 v_sem = row["AutoPath_semana"]
@@ -882,7 +869,6 @@ with tab_autotrac:
                                 df_lic_last = df_ga.sort_values("Fecha_fin_dt").groupby(col_maq)[cols_lic_meta].last().reset_index()
                                 df_tabla_ap = pd.merge(df_tabla_ap, df_lic_last, on=col_maq, how="left")
             
-                            # Formatear el porcentaje para la vista final
                             df_tabla_ap["AutoPath™ Activo_fmt"] = df_tabla_ap["AutoPath™ Activo"].apply(
                                 lambda x: f"{x:.2f}%" if pd.notna(x) else "-"
                             )
@@ -909,23 +895,18 @@ with tab_autotrac:
             
                             df_final_view = df_tabla_ap[cols_para_mostrar].rename(columns=cols_existentes_renombrar)
             
-                            # ------------------------------------------------------------------
-                            # ESTILOS CONDICIONALES (Solo color de letra)
-                            # ------------------------------------------------------------------
                             def estilizar_tabla_ap(row):
                                 styles = [''] * len(row)
                                 
-                                # 1. Colorear texto en "Evolución AutoPath" (Verde si sube, Rojo si baja)
                                 if "Evolución AutoPath" in df_final_view.columns:
                                     idx_evo = list(df_final_view.columns).index("Evolución AutoPath")
                                     val_diff = df_tabla_ap.iloc[row.name]["_diff_num"]
                                     if pd.notna(val_diff):
                                         if val_diff > 0:
-                                            styles[idx_evo] = 'color: #2e7d32; font-weight: bold;' # Verde oscuro elegante
+                                            styles[idx_evo] = 'color: #2e7d32; font-weight: bold;'
                                         elif val_diff < 0:
-                                            styles[idx_evo] = 'color: #c62828; font-weight: bold;' # Rojo oscuro elegante
+                                            styles[idx_evo] = 'color: #c62828; font-weight: bold;'
 
-                                # 2. Colorear texto en "Estado Licencia" (Vigente = verde, Vencida = rojo, Sin color si está en blanco)
                                 if "Estado Licencia" in df_final_view.columns:
                                     idx_lic = list(df_final_view.columns).index("Estado Licencia")
                                     val_estado = str(row["Estado Licencia"]).strip().lower()
@@ -940,9 +921,71 @@ with tab_autotrac:
                             st.dataframe(df_styled, use_container_width=True)
                         else:
                             st.info("ℹ️ No se encontraron máquinas con adopción registrada (> 0%) de AutoPath™ en el período seleccionado.")
-            
                     else:
                         st.info("ℹ️ No se encontraron suficientes datos o columnas para armar la tabla de AutoPath™.")
+
+                    # ------------------------------------------------------------------
+                    # BLOQUE 4: SERIE HISTÓRICA DE AUTOPATH (Barras y Línea)
+                    # ------------------------------------------------------------------
+                    st.markdown("---")
+                    st.subheader("📈 Serie Histórica - AutoPath™")
+
+                    col_fecha_agrup = "Fecha_fin_dt" if "Fecha_fin_dt" in df_ga.columns else ("Fecha" if "Fecha" in df_ga.columns else None)
+                    
+                    if col_fecha_agrup and "AutoPath™ Activo_clean" in df_ga.columns:
+                        # Agrupamos por semana/fecha
+                        df_hist_ap = df_ga.groupby(col_fecha_agrup).agg(
+                            Uso_Promedio=("AutoPath™ Activo_clean", "mean"),
+                            Maquinas_Activas=(col_sn, lambda x: df_ga.loc[x.index, "AutoPath™ Activo_clean"][df_ga.loc[x.index, "AutoPath™ Activo_clean"] > 0].nunique())
+                        ).reset_index()
+
+                        df_hist_ap = df_hist_ap.sort_values(col_fecha_agrup)
+                        df_hist_ap["Fecha_str"] = df_hist_ap[col_fecha_agrup].dt.strftime("%Y-%m-%d")
+
+                        if not df_hist_ap.empty:
+                            import plotly.graph_objects as go
+                            from plotly.subplots import make_subplots
+
+                            fig_hist = make_subplots(specs=[[{"secondary_y": True}]])
+
+                            # Barras: Cantidad de máquinas activas
+                            fig_hist.add_trace(
+                                go.Bar(
+                                    x=df_hist_ap["Fecha_str"],
+                                    y=df_hist_ap["Maquinas_Activas"],
+                                    name="Máquinas Activas",
+                                    marker_color="rgba(70, 130, 180, 0.6)",
+                                ),
+                                secondary_y=False,
+                            )
+
+                            # Línea: Porcentaje de uso promedio general
+                            fig_hist.add_trace(
+                                go.Scatter(
+                                    x=df_hist_ap["Fecha_str"],
+                                    y=df_hist_ap["Uso_Promedio"],
+                                    name="% Uso Promedio",
+                                    mode="lines+markers",
+                                    line=dict(color="#2e7d32", width=3),
+                                ),
+                                secondary_y=True,
+                            )
+
+                            fig_hist.update_layout(
+                                title="Evolución Semanal de Uso y Máquinas Activas (AutoPath™)",
+                                xaxis_title="Período / Fecha",
+                                hovermode="x unified",
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                            )
+
+                            fig_hist.update_yaxes(title_text="Cantidad de Máquinas", secondary_y=False)
+                            fig_hist.update_yaxes(title_text="% Uso Promedio", secondary_y=True, tickformat=".1f")
+
+                            st.plotly_chart(fig_hist, use_container_width=True)
+                        else:
+                            st.info("ℹ️ No hay suficientes datos temporales para graficar la serie histórica de AutoPath™.")
+                    else:
+                        st.info("ℹ️ No se encontraron las columnas de fecha necesarias para generar el gráfico histórico.")
             
                 else:
                     st.warning("⚠️ No se encontraron registros de monitores aptos (software ≥ 23.3) en el período seleccionado.")
