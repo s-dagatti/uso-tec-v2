@@ -701,20 +701,16 @@ with tab_autotrac:
                         clean_col = f"{col}_clean"
                         cols_clean.append(clean_col)
                         df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
-                        df_ga[clean_col] = df_ga[col].fillna(0.0) # Nulos a 0 para que los períodos sin registro cuenten como 0 si la máquina ya es adoptada
+                        df_ga[clean_col] = df_ga[col].fillna(0.0) # Nulos a 0 para que los períodos sin registro cuenten como 0 si la máquina ya tuvo actividad
             
                     if col_sn in df_ga.columns:
-                        # 3. FILTRO DE ADOPCIÓN: Identificar qué máquinas alguna vez superaron el 1% por tecnología
-                        # Creamos una copia de trabajo para filtrar por este criterio histórico
+                        # 3. FILTRO DE ADOPCIÓN (Umbral > 0%): Una vez que registró > 0, se contabiliza para adelante
                         df_adoptadas_mask = pd.DataFrame(index=df_ga.index)
                         
                         for col, clean_col in zip(cols_presentes, cols_clean):
-                            # Identificar series de máquinas que en algún registro del período tuvieron > 1% en esta tecnología
                             maq_superaron = df_ga.groupby(col_sn)[clean_col].transform(lambda x: (x > 0.0).any())
-                            # Si superó alguna vez, filtramos sus registros: mantenemos sus datos (incluso si bajan a 0 después). Si jamás superó, se vuelve NaN/0
-                            df_adoptadas_mask[clean_col] = df_ga[clean_col].where(maq_superaron, np.nan)
+                            df_adoptadas_mask[clean_col] = df_ga[clean_col].where(maq_superaron, None)
                         
-                        # Reemplazamos las columnas _clean con las que ya aplican el filtro de adopción histórica
                         for clean_col in cols_clean:
                             df_ga[clean_col] = df_adoptadas_mask[clean_col]
 
@@ -733,7 +729,7 @@ with tab_autotrac:
                     # ------------------------------------------------------------------
                     st.subheader("🌐 Resumen General de Guiado Avanzado")
             
-                    # Promedio individual de cada tecnología (considerando ceros de máquinas ya adoptadas)
+                    # Promedio individual de cada tecnología (considerando ceros de máquinas adoptadas)
                     medias_periodo_cols = [df_ga[c].mean() for c in cols_clean]
                     medias_periodo_cols_num = [m if pd.notna(m) else 0.0 for m in medias_periodo_cols]
                     
@@ -750,13 +746,15 @@ with tab_autotrac:
                     tiene_datos_global = any(pd.notna(m) for m in medias_periodo_cols)
             
                     val_gen_str = f"{prom_gen_periodo:.2f}%" if (prom_gen_periodo is not None and tiene_datos_global) else "Sin Datos"
+                    
+                    # Cambio absoluto en puntos porcentuales para el KPI General
                     if prom_gen_periodo is not None and prom_gen_semana is not None and tiene_datos_global:
                         delta_gen = prom_gen_semana - prom_gen_periodo
                         delta_gen_str = f"{delta_gen:+.2f}% vs. últ. semana"
                     else:
                         delta_gen_str = None
             
-                    # B. Cantidad de Máquinas Activas en el Período (máquinas adoptadas en al menos una tecnología)
+                    # B. Cantidad de Máquinas Activas en el Período
                     mask_periodo = df_ga[cols_clean].notna().any(axis=1)
                     cant_maq_periodo = df_ga.loc[mask_periodo, col_sn].nunique() if col_sn in df_ga.columns else 0
             
@@ -779,7 +777,7 @@ with tab_autotrac:
             
                     with kpi_gen2:
                         st.metric(
-                            label="Máquinas Activas (Con adopción > 1% en período)",
+                            label="Máquinas Activas (Con adopción > 0% en período)",
                             value=f"{cant_maq_periodo:,}".replace(",", "."),
                             delta=delta_maq_str,
                         )
@@ -807,6 +805,7 @@ with tab_autotrac:
             
                             val_act_str = f"{prom_periodo:.2f}%" if pd.notna(prom_periodo) else "Sin Datos"
             
+                            # Cambio absoluto en puntos porcentuales por tecnología
                             if pd.notna(prom_periodo) and pd.notna(prom_semana):
                                 diff = prom_semana - prom_periodo
                                 delta_str = f"{diff:+.2f}% vs. últ. semana"
@@ -820,7 +819,7 @@ with tab_autotrac:
                             )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS ADOPTADAS EN AUTOPATH)
+                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS ACTIVAS EN AUTOPATH)
                     # ------------------------------------------------------------------
                     st.markdown("---")
                     st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
@@ -833,11 +832,10 @@ with tab_autotrac:
                     group_keys = [c for c in [col_maq, col_tipo, col_org, col_suc] if c and c in df_ga.columns]
             
                     if group_keys and "AutoPath™ Activo_clean" in df_ga.columns:
-                        # Agrupamos por máquina considerando ya el filtro de adopción aplicado en el _clean
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                        # FILTRO PARA LA TABLA: Solo mantener las máquinas que tienen datos válidos (es decir, que superaron alguna vez el 1%)
+                        # FILTRO PARA LA TABLA: Solo mantener las máquinas con datos válidos
                         ap_periodo = ap_periodo[ap_periodo["AutoPath™ Activo"].notna()].copy()
             
                         if not ap_periodo.empty:
@@ -893,7 +891,7 @@ with tab_autotrac:
             
                             st.dataframe(df_final_view, use_container_width=True)
                         else:
-                            st.info("ℹ️ No se encontraron máquinas con adopción registrada (> 1%) de AutoPath™ en el período seleccionado.")
+                            st.info("ℹ️ No se encontraron máquinas con adopción registrada (> 0%) de AutoPath™ en el período seleccionado.")
             
                     else:
                         st.info("ℹ️ No se encontraron suficientes datos o columnas para armar la tabla de AutoPath™.")
