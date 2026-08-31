@@ -855,7 +855,7 @@ with tab_autotrac:
                                 df_tabla_ap = ap_periodo
                                 df_tabla_ap["AutoPath_semana"] = np.nan
             
-                            # Guardamos la diferencia numérica pura para aplicar los colores después
+                            # Guardamos la diferencia numérica pura para aplicar los estilos después
                             def calc_dif_num(row):
                                 v_per = row["AutoPath™ Activo"]
                                 v_sem = row["AutoPath_semana"]
@@ -910,29 +910,29 @@ with tab_autotrac:
                             df_final_view = df_tabla_ap[cols_para_mostrar].rename(columns=cols_existentes_renombrar)
             
                             # ------------------------------------------------------------------
-                            # ESTILOS CONDICIONALES (Styler)
+                            # ESTILOS CONDICIONALES (Solo color de letra)
                             # ------------------------------------------------------------------
                             def estilizar_tabla_ap(row):
                                 styles = [''] * len(row)
                                 
-                                # 1. Colorear "Evolución AutoPath" según suba (verde) o baje (rojo)
+                                # 1. Colorear texto en "Evolución AutoPath" (Verde si sube, Rojo si baja)
                                 if "Evolución AutoPath" in df_final_view.columns:
                                     idx_evo = list(df_final_view.columns).index("Evolución AutoPath")
                                     val_diff = df_tabla_ap.iloc[row.name]["_diff_num"]
                                     if pd.notna(val_diff):
                                         if val_diff > 0:
-                                            styles[idx_evo] = 'background-color: #d4edda; color: #155724;' # Verde suave
+                                            styles[idx_evo] = 'color: #2e7d32; font-weight: bold;' # Verde oscuro elegante
                                         elif val_diff < 0:
-                                            styles[idx_evo] = 'background-color: #f8d7da; color: #721c24;' # Rojo suave
+                                            styles[idx_evo] = 'color: #c62828; font-weight: bold;' # Rojo oscuro elegante
 
-                                # 2. Colorear "Estado Licencia" (Vigente = verde, Vencida = rojo, Sin licencia/Blanco = sin color)
+                                # 2. Colorear texto en "Estado Licencia" (Vigente = verde, Vencida = rojo, Sin color si está en blanco)
                                 if "Estado Licencia" in df_final_view.columns:
                                     idx_lic = list(df_final_view.columns).index("Estado Licencia")
                                     val_estado = str(row["Estado Licencia"]).strip().lower()
                                     if "vigente" in val_estado or "activa" in val_estado:
-                                        styles[idx_lic] = 'background-color: #d4edda; color: #155724;'
+                                        styles[idx_lic] = 'color: #2e7d32; font-weight: bold;'
                                     elif "vencida" in val_estado or "expirada" in val_estado:
-                                        styles[idx_lic] = 'background-color: #f8d7da; color: #721c24;'
+                                        styles[idx_lic] = 'color: #c62828; font-weight: bold;'
 
                                 return styles
 
