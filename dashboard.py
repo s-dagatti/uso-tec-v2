@@ -816,10 +816,28 @@ with tab_autotrac:
                             )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS ACTIVAS EN AUTOPATH)
+                    # SELECTOR DE TECNOLOGÍA PARA DETALLE Y SERIE HISTÓRICA
                     # ------------------------------------------------------------------
                     st.markdown("---")
-                    st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
+                    st.subheader("🔍 Análisis Detallado por Tecnología")
+            
+                    # Mapeo inverso para el selectbox
+                    opciones_tech_dict = {nombres_cortos.get(c, c): c for c in cols_presentes}
+                    
+                    tech_seleccionada_label = st.selectbox(
+                        "Seleccione la tecnología a inspeccionar en detalle y gráfico histórico:",
+                        options=list(opciones_tech_dict.keys()),
+                        key="select_tech_guiado_avanzado"
+                    )
+                    
+                    col_sel = opciones_tech_dict[tech_seleccionada_label]
+                    clean_col_sel = f"{col_sel}_clean"
+
+                    # ------------------------------------------------------------------
+                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (DINÁMICA SEGÚN SELECCIÓN)
+                    # ------------------------------------------------------------------
+                    st.markdown("####")
+                    st.markdown(f"📋 **Detalle de {tech_seleccionada_label} y Licencias por Máquina**")
             
                     col_maq = "Máquina" if "Máquina" in df_ga.columns else ("Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else None)
                     col_tipo = "Tipo" if "Tipo" in df_ga.columns else ("Tipo de máquina" if "Tipo de máquina" in df_ga.columns else None)
@@ -828,48 +846,48 @@ with tab_autotrac:
             
                     group_keys = [c for c in [col_maq, col_tipo, col_org, col_suc] if c and c in df_ga.columns]
             
-                    if group_keys and "AutoPath™ Activo_clean" in df_ga.columns:
-                        ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
-                        ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
+                    if group_keys and clean_col_sel in df_ga.columns:
+                        tabla_periodo = df_ga.groupby(group_keys)[clean_col_sel].mean().reset_index()
+                        tabla_periodo.rename(columns={clean_col_sel: col_sel}, inplace=True)
             
-                        ap_periodo = ap_periodo[ap_periodo["AutoPath™ Activo"].notna()].copy()
+                        tabla_periodo = tabla_periodo[tabla_periodo[col_sel].notna()].copy()
             
-                        if not ap_periodo.empty:
+                        if not tabla_periodo.empty:
                             if not df_ga_ult_semana.empty:
-                                ap_semana = df_ga_ult_semana.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
-                                ap_semana.rename(columns={"AutoPath™ Activo_clean": "AutoPath_semana"}, inplace=True)
-                                df_tabla_ap = pd.merge(ap_periodo, ap_semana, on=group_keys, how="left")
+                                tabla_semana = df_ga_ult_semana.groupby(group_keys)[clean_col_sel].mean().reset_index()
+                                tabla_semana.rename(columns={clean_col_sel: "col_semana_val"}, inplace=True)
+                                df_tabla_final = pd.merge(tabla_periodo, tabla_semana, on=group_keys, how="left")
                             else:
-                                df_tabla_ap = ap_periodo
-                                df_tabla_ap["AutoPath_semana"] = np.nan
+                                df_tabla_final = tabla_periodo
+                                df_tabla_final["col_semana_val"] = np.nan
             
                             def calc_dif_num(row):
-                                v_per = row["AutoPath™ Activo"]
-                                v_sem = row["AutoPath_semana"]
+                                v_per = row[col_sel]
+                                v_sem = row["col_semana_val"]
                                 if pd.notna(v_per) and pd.notna(v_sem):
                                     return v_sem - v_per
                                 else:
                                     return 0.0
                             
-                            df_tabla_ap["_diff_num"] = df_tabla_ap.apply(calc_dif_num, axis=1)
+                            df_tabla_final["_diff_num"] = df_tabla_final.apply(calc_dif_num, axis=1)
 
                             def calc_evolucion_str(row):
-                                v_per = row["AutoPath™ Activo"]
-                                v_sem = row["AutoPath_semana"]
+                                v_per = row[col_sel]
+                                v_sem = row["col_semana_val"]
                                 if pd.notna(v_per) and pd.notna(v_sem):
                                     diff = v_sem - v_per
                                     return f"{diff:+.2f}%"
                                 else:
                                     return "-"
             
-                            df_tabla_ap["Evolución AutoPath"] = df_tabla_ap.apply(calc_evolucion_str, axis=1)
+                            df_tabla_final["Evolución"] = df_tabla_final.apply(calc_evolucion_str, axis=1)
             
                             cols_lic_meta = [c for c in [col_licencia, col_fin_licencia, col_estado_licencia] if c and c in df_ga.columns]
                             if cols_lic_meta and col_maq:
                                 df_lic_last = df_ga.sort_values("Fecha_fin_dt").groupby(col_maq)[cols_lic_meta].last().reset_index()
-                                df_tabla_ap = pd.merge(df_tabla_ap, df_lic_last, on=col_maq, how="left")
+                                df_tabla_final = pd.merge(df_tabla_final, df_lic_last, on=col_maq, how="left")
             
-                            df_tabla_ap["AutoPath™ Activo_fmt"] = df_tabla_ap["AutoPath™ Activo"].apply(
+                            df_tabla_final[f"{col_sel}_fmt"] = df_tabla_final[col_sel].apply(
                                 lambda x: f"{x:.2f}%" if pd.notna(x) else "-"
                             )
             
@@ -878,8 +896,8 @@ with tab_autotrac:
                                 (col_tipo, "Tipo"),
                                 (col_org, "Organización"),
                                 (col_suc, "Sucursal"),
-                                ("AutoPath™ Activo_fmt", "AutoPath™ Activo"),
-                                ("Evolución AutoPath", "Evolución AutoPath"),
+                                (f"{col_sel}_fmt", tech_seleccionada_label),
+                                ("Evolución", f"Evolución {tech_seleccionada_label}"),
                                 (col_licencia, "Licencia"),
                                 (col_fin_licencia, "Vencimiento Licencia"),
                                 (col_estado_licencia, "Estado Licencia"),
@@ -889,18 +907,19 @@ with tab_autotrac:
                             cols_para_mostrar = []
             
                             for orig, dest in col_order_target:
-                                if orig and orig in df_tabla_ap.columns:
+                                if orig and orig in df_tabla_final.columns:
                                     cols_para_mostrar.append(orig)
                                     cols_existentes_renombrar[orig] = dest
             
-                            df_final_view = df_tabla_ap[cols_para_mostrar].rename(columns=cols_existentes_renombrar)
+                            df_final_view = df_tabla_final[cols_para_mostrar].rename(columns=cols_existentes_renombrar)
             
-                            def estilizar_tabla_ap(row):
+                            def estilizar_tabla(row):
                                 styles = [''] * len(row)
+                                col_evo_name = f"Evolución {tech_seleccionada_label}"
                                 
-                                if "Evolución AutoPath" in df_final_view.columns:
-                                    idx_evo = list(df_final_view.columns).index("Evolución AutoPath")
-                                    val_diff = df_tabla_ap.iloc[row.name]["_diff_num"]
+                                if col_evo_name in df_final_view.columns:
+                                    idx_evo = list(df_final_view.columns).index(col_evo_name)
+                                    val_diff = df_tabla_final.iloc[row.name]["_diff_num"]
                                     if pd.notna(val_diff):
                                         if val_diff > 0:
                                             styles[idx_evo] = 'color: #2e7d32; font-weight: bold;'
@@ -917,53 +936,50 @@ with tab_autotrac:
 
                                 return styles
 
-                            df_styled = df_final_view.style.apply(estilizar_tabla_ap, axis=1)
+                            df_styled = df_final_view.style.apply(estilizar_tabla, axis=1)
                             st.dataframe(df_styled, use_container_width=True)
                         else:
-                            st.info("ℹ️ No se encontraron máquinas con adopción registrada (> 0%) de AutoPath™ en el período seleccionado.")
+                            st.info(f"ℹ️ No se encontraron máquinas con adopción registrada (> 0%) de {tech_seleccionada_label} en el período seleccionado.")
                     else:
-                        st.info("ℹ️ No se encontraron suficientes datos o columnas para armar la tabla de AutoPath™.")
+                        st.info("ℹ️ No se encontraron suficientes datos o columnas para armar la tabla detallada.")
 
                     # ------------------------------------------------------------------
-                    # BLOQUE 4: SERIE HISTÓRICA DE AUTOPATH (Barras y Línea)
+                    # BLOQUE 4: SERIE HISTÓRICA (DINÁMICA SEGÚN SELECCIÓN)
                     # ------------------------------------------------------------------
                     st.markdown("---")
-                    st.subheader("📈 Serie Histórica - AutoPath™")
+                    st.subheader(f"📈 Serie Histórica - {tech_seleccionada_label}")
 
                     col_fecha_agrup = "Fecha_fin_dt" if "Fecha_fin_dt" in df_ga.columns else ("Fecha" if "Fecha" in df_ga.columns else None)
                     
-                    if col_fecha_agrup and "AutoPath™ Activo_clean" in df_ga.columns:
-                        # Agrupamos por semana/fecha
-                        df_hist_ap = df_ga.groupby(col_fecha_agrup).agg(
-                            Uso_Promedio=("AutoPath™ Activo_clean", "mean"),
-                            Maquinas_Activas=(col_sn, lambda x: df_ga.loc[x.index, "AutoPath™ Activo_clean"][df_ga.loc[x.index, "AutoPath™ Activo_clean"] > 0].nunique())
+                    if col_fecha_agrup and clean_col_sel in df_ga.columns:
+                        df_hist = df_ga.groupby(col_fecha_agrup).agg(
+                            Uso_Promedio=(clean_col_sel, "mean"),
+                            Maquinas_Activas=(col_sn, lambda x: df_ga.loc[x.index, clean_col_sel][df_ga.loc[x.index, clean_col_sel] > 0].nunique())
                         ).reset_index()
 
-                        df_hist_ap = df_hist_ap.sort_values(col_fecha_agrup)
-                        df_hist_ap["Fecha_str"] = df_hist_ap[col_fecha_agrup].dt.strftime("%Y-%m-%d")
+                        df_hist = df_hist.sort_values(col_fecha_agrup)
+                        df_hist["Fecha_str"] = df_hist[col_fecha_agrup].dt.strftime("%Y-%m-%d")
 
-                        if not df_hist_ap.empty:
+                        if not df_hist.empty:
                             import plotly.graph_objects as go
                             from plotly.subplots import make_subplots
 
                             fig_hist = make_subplots(specs=[[{"secondary_y": True}]])
 
-                            # Barras: Cantidad de máquinas activas
                             fig_hist.add_trace(
                                 go.Bar(
-                                    x=df_hist_ap["Fecha_str"],
-                                    y=df_hist_ap["Maquinas_Activas"],
+                                    x=df_hist["Fecha_str"],
+                                    y=df_hist["Maquinas_Activas"],
                                     name="Máquinas Activas",
                                     marker_color="rgba(70, 130, 180, 0.6)",
                                 ),
                                 secondary_y=False,
                             )
 
-                            # Línea: Porcentaje de uso promedio general
                             fig_hist.add_trace(
                                 go.Scatter(
-                                    x=df_hist_ap["Fecha_str"],
-                                    y=df_hist_ap["Uso_Promedio"],
+                                    x=df_hist["Fecha_str"],
+                                    y=df_hist["Uso_Promedio"],
                                     name="% Uso Promedio",
                                     mode="lines+markers",
                                     line=dict(color="#2e7d32", width=3),
@@ -972,7 +988,7 @@ with tab_autotrac:
                             )
 
                             fig_hist.update_layout(
-                                title="Evolución Semanal de Uso y Máquinas Activas (AutoPath™)",
+                                title=f"Evolución Semanal de Uso y Máquinas Activas ({tech_seleccionada_label})",
                                 xaxis_title="Período / Fecha",
                                 hovermode="x unified",
                                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -983,15 +999,9 @@ with tab_autotrac:
 
                             st.plotly_chart(fig_hist, use_container_width=True)
                         else:
-                            st.info("ℹ️ No hay suficientes datos temporales para graficar la serie histórica de AutoPath™.")
+                            st.info(f"ℹ️ No hay suficientes datos temporales para graficar la serie histórica de {tech_seleccionada_label}.")
                     else:
                         st.info("ℹ️ No se encontraron las columnas de fecha necesarias para generar el gráfico histórico.")
-            
-                else:
-                    st.warning("⚠️ No se encontraron registros de monitores aptos (software ≥ 23.3) en el período seleccionado.")
-            
-            else:
-                st.info("ℹ️ No se encontraron las columnas de Guiado Avanzado requeridas en el archivo cargado.")
                       
     else:
         st.write(
