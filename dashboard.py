@@ -327,9 +327,10 @@ with tab_autotrac:
                 return "⚪ Sin datos últ. semana"
 
             diff = prom_ult - prom_gen
-            if diff > 0.05:
+            # Cambio directo en puntos porcentuales reales
+            if diff > 0.5:
                 return f"🟢 Genial (+{diff:.2f}%)"
-            elif diff < -0.05:
+            elif diff < -0.5:
                 return f"🔴 Peligro ({diff:.2f}%)"
             else:
                 return "➡️ Estable (0.00%)"
@@ -418,7 +419,6 @@ with tab_autotrac:
             " Avanzada**, las cuales requieren estar activas para operar AutoTrac™."
         )
 
-        # Función para identificar licencias PUK
         def es_licencia_puk(lic_val):
             if pd.isna(lic_val):
                 return False
@@ -430,20 +430,17 @@ with tab_autotrac:
                 or ("avanzada" in val_str)
             )
 
-        # Normalización del tipo para leyenda y agrupaciones
         def normalizar_tipo_puk(lic_val):
             val_str = str(lic_val).lower()
             if "avanzada" in val_str:
                 return "Renovable Avanzada"
             return "Renovable Esencial"
 
-        # Filtrar máquinas únicas que posean PUK
         df_puk = df_promedios[
             df_promedios["Licencia"].apply(es_licencia_puk)
         ].copy()
 
         if not df_puk.empty:
-            # Parseo de fecha respetando día/mes/año (dayfirst=True)
             col_fecha_origen = (
                 col_fin_licencia
                 if col_fin_licencia in df_puk.columns
@@ -456,11 +453,9 @@ with tab_autotrac:
 
             df_puk["Tipo_PUK"] = df_puk["Licencia"].apply(normalizar_tipo_puk)
 
-            # Fechas de referencia para cálculos
             hoy = pd.Timestamp.today().normalize()
             proximo_mes = hoy + pd.Timedelta(days=30)
 
-            # --- CÁLCULO DE KPIS PUK ---
             if "Estado Licencia" in df_puk.columns:
                 estado_clean = (
                     df_puk["Estado Licencia"].astype(str).str.lower().str.strip()
@@ -544,15 +539,11 @@ with tab_autotrac:
 
                 st.plotly_chart(fig_puk, use_container_width=True)
             else:
-                st.info(
-                    "No hay fechas de vencimiento válidas registradas para"
-                    " graficar."
-                )
+                st.info("No hay fechas de vencimiento válidas registradas para graficar.")
 
             # --- TABLA DETALLE DE PUKS ---
             st.markdown("##### 📋 Detalle de Equipos con Licencia PUK")
 
-            # Formatear la fecha para mostrar explícitamente en formato DD/MM/YYYY
             df_puk["Vencimiento Licencia"] = df_puk["Fecha_venc_dt"].apply(
                 lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "-"
             )
@@ -581,7 +572,6 @@ with tab_autotrac:
             )
 
         # --- 8. GRÁFICO HISTÓRICO SEMANAL DE ADOPCIÓN DE AUTOTRAC ---
-        # (Fuera del else de PUKs para que siempre se evalúe independientemente)
         st.markdown("---")
         st.subheader("📈 Evolución Semanal del Uso de AutoTrac™")
         st.caption(
@@ -589,22 +579,18 @@ with tab_autotrac:
             " AutoTrac™ (≥ 1%) y el porcentaje promedio de uso registrado."
         )
 
-        # Preparar base filtrada con fechas válidas
         df_hist_semanal = df_filtrado_aptas.dropna(subset=["Fecha_fin_dt"]).copy()
 
         if not df_hist_semanal.empty:
-            # Agrupación por semana (inicio de semana)
             df_hist_semanal["Semana_Inicio"] = df_hist_semanal[
                 "Fecha_fin_dt"
             ].dt.to_period("W").dt.start_time
 
-            # Registros con AutoTrac activo >= 1%
             df_autotrac_semanal = df_hist_semanal[
                 pd.notna(df_hist_semanal["AutoTrac™ Activo"])
                 & (df_hist_semanal["AutoTrac™ Activo"] >= 1)
             ]
 
-            # Agrupación por semana
             df_semanal = (
                 df_autotrac_semanal.groupby("Semana_Inicio")
                 .agg(
@@ -620,10 +606,8 @@ with tab_autotrac:
             )
 
             if not df_semanal.empty:
-                # Gráfico con doble eje Y
                 fig_semanal = make_subplots(specs=[[{"secondary_y": True}]])
 
-                # Barras: Cantidad de máquinas
                 fig_semanal.add_trace(
                     go.Bar(
                         x=df_semanal["Semana_Str"],
@@ -636,7 +620,6 @@ with tab_autotrac:
                     secondary_y=False,
                 )
 
-                # Línea: % Promedio de AutoTrac
                 fig_semanal.add_trace(
                     go.Scatter(
                         x=df_semanal["Semana_Str"],
