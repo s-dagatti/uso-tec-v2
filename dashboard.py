@@ -827,7 +827,7 @@ with tab_autotrac:
                             )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA
+                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS ACTIVAS EN AUTOPATH)
                     # ------------------------------------------------------------------
                     st.markdown("---")
                     st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
@@ -843,6 +843,7 @@ with tab_autotrac:
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
+                        # FILTRO PARA LA TABLA: Solo mantener las máquinas con datos válidos
                         ap_periodo = ap_periodo[ap_periodo["AutoPath™ Activo"].notna()].copy()
             
                         if not ap_periodo.empty:
@@ -854,7 +855,18 @@ with tab_autotrac:
                                 df_tabla_ap = ap_periodo
                                 df_tabla_ap["AutoPath_semana"] = np.nan
             
-                            def calc_evolucion(row):
+                            # Guardamos la diferencia numérica pura para aplicar los colores después
+                            def calc_dif_num(row):
+                                v_per = row["AutoPath™ Activo"]
+                                v_sem = row["AutoPath_semana"]
+                                if pd.notna(v_per) and pd.notna(v_sem):
+                                    return v_sem - v_per
+                                else:
+                                    return 0.0
+                            
+                            df_tabla_ap["_diff_num"] = df_tabla_ap.apply(calc_dif_num, axis=1)
+
+                            def calc_evolucion_str(row):
                                 v_per = row["AutoPath™ Activo"]
                                 v_sem = row["AutoPath_semana"]
                                 if pd.notna(v_per) and pd.notna(v_sem):
@@ -863,14 +875,15 @@ with tab_autotrac:
                                 else:
                                     return "-"
             
-                            df_tabla_ap["Evolución AutoPath"] = df_tabla_ap.apply(calc_evolucion, axis=1)
+                            df_tabla_ap["Evolución AutoPath"] = df_tabla_ap.apply(calc_evolucion_str, axis=1)
             
                             cols_lic_meta = [c for c in [col_licencia, col_fin_licencia, col_estado_licencia] if c and c in df_ga.columns]
                             if cols_lic_meta and col_maq:
                                 df_lic_last = df_ga.sort_values("Fecha_fin_dt").groupby(col_maq)[cols_lic_meta].last().reset_index()
                                 df_tabla_ap = pd.merge(df_tabla_ap, df_lic_last, on=col_maq, how="left")
             
-                            df_tabla_ap["AutoPath™ Activo"] = df_tabla_ap["AutoPath™ Activo"].apply(
+                            # Formatear el porcentaje para la vista final
+                            df_tabla_ap["AutoPath™ Activo_fmt"] = df_tabla_ap["AutoPath™ Activo"].apply(
                                 lambda x: f"{x:.2f}%" if pd.notna(x) else "-"
                             )
             
@@ -879,7 +892,7 @@ with tab_autotrac:
                                 (col_tipo, "Tipo"),
                                 (col_org, "Organización"),
                                 (col_suc, "Sucursal"),
-                                ("AutoPath™ Activo", "AutoPath™ Activo"),
+                                ("AutoPath™ Activo_fmt", "AutoPath™ Activo"),
                                 ("Evolución AutoPath", "Evolución AutoPath"),
                                 (col_licencia, "Licencia"),
                                 (col_fin_licencia, "Vencimiento Licencia"),
@@ -896,7 +909,35 @@ with tab_autotrac:
             
                             df_final_view = df_tabla_ap[cols_para_mostrar].rename(columns=cols_existentes_renombrar)
             
-                            st.dataframe(df_final_view, use_container_width=True)
+                            # ------------------------------------------------------------------
+                            # ESTILOS CONDICIONALES (Styler)
+                            # ------------------------------------------------------------------
+                            def estilizar_tabla_ap(row):
+                                styles = [''] * len(row)
+                                
+                                # 1. Colorear "Evolución AutoPath" según suba (verde) o baje (rojo)
+                                if "Evolución AutoPath" in df_final_view.columns:
+                                    idx_evo = list(df_final_view.columns).index("Evolución AutoPath")
+                                    val_diff = df_tabla_ap.iloc[row.name]["_diff_num"]
+                                    if pd.notna(val_diff):
+                                        if val_diff > 0:
+                                            styles[idx_evo] = 'background-color: #d4edda; color: #155724;' # Verde suave
+                                        elif val_diff < 0:
+                                            styles[idx_evo] = 'background-color: #f8d7da; color: #721c24;' # Rojo suave
+
+                                # 2. Colorear "Estado Licencia" (Vigente = verde, Vencida = rojo, Sin licencia/Blanco = sin color)
+                                if "Estado Licencia" in df_final_view.columns:
+                                    idx_lic = list(df_final_view.columns).index("Estado Licencia")
+                                    val_estado = str(row["Estado Licencia"]).strip().lower()
+                                    if "vigente" in val_estado or "activa" in val_estado:
+                                        styles[idx_lic] = 'background-color: #d4edda; color: #155724;'
+                                    elif "vencida" in val_estado or "expirada" in val_estado:
+                                        styles[idx_lic] = 'background-color: #f8d7da; color: #721c24;'
+
+                                return styles
+
+                            df_styled = df_final_view.style.apply(estilizar_tabla_ap, axis=1)
+                            st.dataframe(df_styled, use_container_width=True)
                         else:
                             st.info("ℹ️ No se encontraron máquinas con adopción registrada (> 0%) de AutoPath™ en el período seleccionado.")
             
