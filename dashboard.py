@@ -695,9 +695,7 @@ with tab_autotrac:
                 if not df_ga.empty:
                     col_sn = "Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else "Máquina"
                     
-                    # 2. Limpieza inicial: convertimos a numérico. 
-                    # Los ceros se convierten temporalmente a NaN si queremos excluirlos del promedio, 
-                    # pero primero necesitamos saber si la máquina alguna vez superó el 0%.
+                    # 2. Limpieza y conversión numérica
                     cols_clean = []
                     for col in cols_presentes:
                         clean_col = f"{col}_clean"
@@ -705,19 +703,19 @@ with tab_autotrac:
                         df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
             
                     if col_sn in df_ga.columns:
-                        # 3. FILTRE DE ADOPCIÓN Y EXCLUSIÓN DE CEROS POSTERIORES:
-                        # Una máquina se habilita si alguna vez tuvo > 0. Una vez habilitada, 
-                        # sus valores de 0% se vuelven NaN (se descartan del promedio) y solo promedian los valores > 0.
+                        # 3. FILTRO DE ADOPCIÓN INTELIGENTE:
+                        # Consideramos el 0% solo si la máquina ya demostró adopción previa (superó > 0 en alguna ocasión del período) 
+                        # Y evitamos arrastrar registros totalmente inútiles de máquinas paradas todo el ciclo.
                         df_adoptadas_mask = pd.DataFrame(index=df_ga.index)
                         
                         for col, clean_col in zip(cols_presentes, cols_clean):
-                            # ¿Alguna vez tuvo un valor estrictamente mayor a 0 en todo el período?
+                            # ¿La máquina usó la tecnología alguna vez en el período? (> 0%)
                             maq_superaron = df_ga.groupby(col_sn)[col].transform(lambda x: (x > 0.0).any())
                             
-                            # Si superó, mantenemos el valor original, PERO si ese valor original es 0, lo pasamos a NaN para que no promedie.
-                            # Si jamás superó, queda todo en NaN.
-                            val_filtrado = df_ga[col].where(df_ga[col] > 0.0, np.nan)
-                            df_adoptadas_mask[clean_col] = val_filtrado.where(maq_superaron, np.nan)
+                            # Si la máquina es adoptada, los nulos pasan a 0 (el 0 participa), 
+                            # pero si jamás fue adoptada, se descarta (NaN) para que no hunda el promedio global.
+                            val_con_ceros = df_ga[col].fillna(0.0)
+                            df_adoptadas_mask[clean_col] = val_con_ceros.where(maq_superaron, np.nan)
                         
                         for clean_col in cols_clean:
                             df_ga[clean_col] = df_adoptadas_mask[clean_col]
@@ -737,7 +735,7 @@ with tab_autotrac:
                     # ------------------------------------------------------------------
                     st.subheader("🌐 Resumen General de Guiado Avanzado")
             
-                    # Promedio individual de cada tecnología (ignorando ceros y nulos)
+                    # Promedio individual de cada tecnología (considerando ceros de máquinas adoptadas)
                     medias_periodo_cols = [df_ga[c].mean() for c in cols_clean]
                     medias_periodo_cols_num = [m if pd.notna(m) else 0.0 for m in medias_periodo_cols]
                     
