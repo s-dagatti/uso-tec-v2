@@ -710,7 +710,7 @@ with tab_autotrac:
                         
                         for col, clean_col in zip(cols_presentes, cols_clean):
                             # Identificar series de máquinas que en algún registro del período tuvieron > 1% en esta tecnología
-                            maq_superaron = df_ga.groupby(col_sn)[clean_col].transform(lambda x: (x > 0.1).any())
+                            maq_superaron = df_ga.groupby(col_sn)[clean_col].transform(lambda x: (x > 0.0).any())
                             # Si superó alguna vez, filtramos sus registros: mantenemos sus datos (incluso si bajan a 0 después). Si jamás superó, se vuelve NaN/0
                             df_adoptadas_mask[clean_col] = df_ga[clean_col].where(maq_superaron, np.nan)
                         
