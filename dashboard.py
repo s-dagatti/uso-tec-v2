@@ -692,13 +692,13 @@ with tab_autotrac:
                 df_ga = df_filtrado_raw[df_filtrado_raw["es_valida"]].copy()
             
                 if not df_ga.empty:
-                    # 2. Filtrar: mantener solo valores estrictamente mayores a 1% (ignora 0, nulos y valores <= 1)
+                    # 2. Filtrar: mantener solo valores estrictamente mayores a 3% (ignora 0, nulos y valores <= 3)
                     cols_clean = []
                     for col in cols_presentes:
                         clean_col = f"{col}_clean"
                         cols_clean.append(clean_col)
                         df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
-                        df_ga[clean_col] = df_ga[col].where(df_ga[col] > 1.0)
+                        df_ga[clean_col] = df_ga[col].where(df_ga[col] > 3.0)
             
                     # Identificar la última semana dentro del período seleccionado
                     max_fecha_ga = df_ga["Fecha_fin_dt"].max()
@@ -715,7 +715,7 @@ with tab_autotrac:
                     # ------------------------------------------------------------------
                     st.subheader("🌐 Resumen General de Guiado Avanzado")
             
-                    # Promedio individual de cada tecnología (> 1%), si no hay datos aporta 0.0 para dividir siempre entre 4
+                    # Promedio individual de cada tecnología (> 3%), si no hay datos aporta 0.0 para dividir siempre entre 4
                     medias_periodo_cols = [df_ga[c].mean() for c in cols_clean]
                     medias_periodo_cols_num = [m if pd.notna(m) else 0.0 for m in medias_periodo_cols]
                     
@@ -738,7 +738,7 @@ with tab_autotrac:
                     else:
                         delta_gen_str = None
             
-                    # B. Cantidad de Máquinas Activas en el Período (registros > 1%)
+                    # B. Cantidad de Máquinas Activas en el Período (registros > 3%)
                     col_sn = "Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else "Máquina"
             
                     mask_periodo = df_ga[cols_clean].notna().any(axis=1)
@@ -763,7 +763,7 @@ with tab_autotrac:
             
                     with kpi_gen2:
                         st.metric(
-                            label="Máquinas Activas (Uso > 1% en el período)",
+                            label="Máquinas Activas (Uso > 3% en el período)",
                             value=f"{cant_maq_periodo:,}".replace(",", "."),
                             delta=delta_maq_str,
                         )
@@ -804,7 +804,7 @@ with tab_autotrac:
                             )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS CON USO > 1%)
+                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS CON USO > 3%)
                     # ------------------------------------------------------------------
                     st.markdown("---")
                     st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
@@ -820,8 +820,8 @@ with tab_autotrac:
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                        # FILTRO: Excluir máquinas cuyo promedio sea menor o igual a 1% o nulo
-                        ap_periodo = ap_periodo[(ap_periodo["AutoPath™ Activo"].notna()) & (ap_periodo["AutoPath™ Activo"] > 1.0)].copy()
+                        # FILTRO: Excluir máquinas cuyo promedio sea menor o igual a 3% o nulo
+                        ap_periodo = ap_periodo[(ap_periodo["AutoPath™ Activo"].notna()) & (ap_periodo["AutoPath™ Activo"] > 3.0)].copy()
             
                         if not ap_periodo.empty:
                             if not df_ga_ult_semana.empty:
@@ -876,7 +876,7 @@ with tab_autotrac:
             
                             st.dataframe(df_final_view, use_container_width=True)
                         else:
-                            st.info("ℹ️ No se encontraron máquinas con uso registrado (> 1%) de AutoPath™ en el período seleccionado.")
+                            st.info("ℹ️ No se encontraron máquinas con uso registrado (> 3%) de AutoPath™ en el período seleccionado.")
             
                     else:
                         st.info("ℹ️ No se encontraron suficientes datos o columnas para armar la tabla de AutoPath™.")
