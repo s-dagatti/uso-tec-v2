@@ -692,13 +692,13 @@ with tab_autotrac:
                 df_ga = df_filtrado_raw[df_filtrado_raw["es_valida"]].copy()
             
                 if not df_ga.empty:
-                    # 2. Filtrar: mantener valores mayores a 0% (es decir, > 0, ignorando solo nulos y ceros exactos)
+                    # 2. Limpieza: convertimos a numérico. Los nulos se vuelven NaN (se descartan), 
+                    # pero los 0 se mantienen intactos para que participen y promedien.
                     cols_clean = []
                     for col in cols_presentes:
                         clean_col = f"{col}_clean"
                         cols_clean.append(clean_col)
-                        df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
-                        df_ga[clean_col] = df_ga[col].where(df_ga[col] > 0.0)
+                        df_ga[clean_col] = pd.to_numeric(df_ga[col], errors="coerce")
             
                     # Identificar la última semana dentro del período seleccionado
                     max_fecha_ga = df_ga["Fecha_fin_dt"].max()
@@ -715,7 +715,7 @@ with tab_autotrac:
                     # ------------------------------------------------------------------
                     st.subheader("🌐 Resumen General de Guiado Avanzado")
             
-                    # Promedio individual de cada tecnología (> 0%), si no hay datos aporta 0.0 para dividir siempre entre 4
+                    # Promedio individual de cada tecnología (considerando ceros), si no hay datos aporta 0.0 para dividir siempre entre 4
                     medias_periodo_cols = [df_ga[c].mean() for c in cols_clean]
                     medias_periodo_cols_num = [m if pd.notna(m) else 0.0 for m in medias_periodo_cols]
                     
@@ -738,14 +738,14 @@ with tab_autotrac:
                     else:
                         delta_gen_str = None
             
-                    # B. Cantidad de Máquinas Activas en el Período (registros > 0%)
+                    # B. Cantidad de Máquinas Activas en el Período (aquellas que tengan al menos un registro con uso > 0)
                     col_sn = "Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else "Máquina"
             
-                    mask_periodo = df_ga[cols_clean].notna().any(axis=1)
+                    mask_periodo = (df_ga[cols_clean] > 0).any(axis=1)
                     cant_maq_periodo = df_ga.loc[mask_periodo, col_sn].nunique() if col_sn in df_ga.columns else 0
             
                     if not df_ga_ult_semana.empty and col_sn in df_ga_ult_semana.columns:
-                        mask_semana = df_ga_ult_semana[cols_clean].notna().any(axis=1)
+                        mask_semana = (df_ga_ult_semana[cols_clean] > 0).any(axis=1)
                         cant_maq_semana = df_ga_ult_semana.loc[mask_semana, col_sn].nunique()
                         diff_maq = cant_maq_semana - cant_maq_periodo
                         delta_maq_str = f"{diff_maq:+d} máq. vs. últ. semana"
@@ -820,7 +820,7 @@ with tab_autotrac:
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                        # FILTRO: Excluir máquinas cuyo promedio sea 0 o nulo
+                        # FILTRO PARA LA TABLA: Excluir máquinas cuyo promedio sea 0 o nulo
                         ap_periodo = ap_periodo[(ap_periodo["AutoPath™ Activo"].notna()) & (ap_periodo["AutoPath™ Activo"] > 0.0)].copy()
             
                         if not ap_periodo.empty:
