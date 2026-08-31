@@ -665,7 +665,7 @@ with tab_autotrac:
         else:
             st.info("No existen fechas válidas registradas para agrupar por semana.")
 
-        # ==============================================================================
+# ==============================================================================
         # PESTAÑA: GUIADO AVANZADO
         # ==============================================================================
         with tab_guiado:
@@ -695,7 +695,7 @@ with tab_autotrac:
                 if not df_ga.empty:
                     col_sn = "Número de serie de la máquina" if "Número de serie de la máquina" in df_ga.columns else "Máquina"
                     
-                    # 2. Limpieza y conversión numérica
+                    # 2. Limpieza inicial
                     cols_clean = []
                     for col in cols_presentes:
                         clean_col = f"{col}_clean"
@@ -703,19 +703,26 @@ with tab_autotrac:
                         df_ga[col] = pd.to_numeric(df_ga[col], errors="coerce")
             
                     if col_sn in df_ga.columns:
-                        # 3. FILTRO DE ADOPCIÓN INTELIGENTE:
-                        # Consideramos el 0% solo si la máquina ya demostró adopción previa (superó > 0 en alguna ocasión del período) 
-                        # Y evitamos arrastrar registros totalmente inútiles de máquinas paradas todo el ciclo.
+                        # 3. FILTRO DE ACTIVIDAD REAL:
+                        # Para evitar que semanas inútiles o registros fantasma tiren el promedio al piso,
+                        # solo evaluamos el 0% en registros donde la máquina tuvo algún uso registrado (> 0) 
+                        # o pertenecen a semanas con actividad productiva de esa máquina.
                         df_adoptadas_mask = pd.DataFrame(index=df_ga.index)
                         
                         for col, clean_col in zip(cols_presentes, cols_clean):
-                            # ¿La máquina usó la tecnología alguna vez en el período? (> 0%)
-                            maq_superaron = df_ga.groupby(col_sn)[col].transform(lambda x: (x > 0.0).any())
+                            # Identificamos registros donde la tecnología se usó (>0) o 
+                            # bien donde la máquina ya era usuaria activa en esa ventana de tiempo.
+                            val_original = df_ga[col]
                             
-                            # Si la máquina es adoptada, los nulos pasan a 0 (el 0 participa), 
-                            # pero si jamás fue adoptada, se descarta (NaN) para que no hunda el promedio global.
-                            val_con_ceros = df_ga[col].fillna(0.0)
-                            df_adoptadas_mask[clean_col] = val_con_ceros.where(maq_superaron, np.nan)
+                            # Condición: si es > 0 lo dejamos; si es 0, solo lo conservamos si la máquina 
+                            # demostró uso en al menos otra semana del período (evita el 0 de máquinas totalmente paradas).
+                            ha_usado_antes = df_ga.groupby(col_sn)[col].transform(lambda x: (x > 0.0).any())
+                            
+                            # Si la máquina usó la tecnología alguna vez, los nulos se vuelven 0, pero descartamos 
+                            # registros totalmente vacíos o inactivos de la base.
+                            df_adoptadas_mask[clean_col] = val_original.where(ha_usado_antes, np.nan)
+                            # Reemplazamos nulos por 0 solo donde hubo actividad real de la máquina
+                            df_adoptadas_mask[clean_col] = df_adoptadas_mask[clean_col].apply(lambda x: 0.0 if pd.notna(x) and x == 0.0 else x)
                         
                         for clean_col in cols_clean:
                             df_ga[clean_col] = df_adoptadas_mask[clean_col]
@@ -735,13 +742,11 @@ with tab_autotrac:
                     # ------------------------------------------------------------------
                     st.subheader("🌐 Resumen General de Guiado Avanzado")
             
-                    # Promedio individual de cada tecnología (considerando ceros de máquinas adoptadas)
                     medias_periodo_cols = [df_ga[c].mean() for c in cols_clean]
                     medias_periodo_cols_num = [m if pd.notna(m) else 0.0 for m in medias_periodo_cols]
                     
                     prom_gen_periodo = sum(medias_periodo_cols_num) / len(cols_guiado_avanzado) if len(cols_guiado_avanzado) > 0 else None
             
-                    # Lo mismo para la última semana
                     if not df_ga_ult_semana.empty:
                         medias_semana_cols = [df_ga_ult_semana[c].mean() for c in cols_clean]
                         medias_semana_cols_num = [m if pd.notna(m) else 0.0 for m in medias_semana_cols]
@@ -753,14 +758,12 @@ with tab_autotrac:
             
                     val_gen_str = f"{prom_gen_periodo:.2f}%" if (prom_gen_periodo is not None and tiene_datos_global) else "Sin Datos"
                     
-                    # Cambio absoluto en puntos porcentuales para el KPI General
                     if prom_gen_periodo is not None and prom_gen_semana is not None and tiene_datos_global:
                         delta_gen = prom_gen_semana - prom_gen_periodo
                         delta_gen_str = f"{delta_gen:+.2f}% vs. últ. semana"
                     else:
                         delta_gen_str = None
             
-                    # B. Cantidad de Máquinas Activas en el Período
                     mask_periodo = df_ga[cols_clean].notna().any(axis=1)
                     cant_maq_periodo = df_ga.loc[mask_periodo, col_sn].nunique() if col_sn in df_ga.columns else 0
             
@@ -811,7 +814,6 @@ with tab_autotrac:
             
                             val_act_str = f"{prom_periodo:.2f}%" if pd.notna(prom_periodo) else "Sin Datos"
             
-                            # Cambio absoluto en puntos porcentuales por tecnología
                             if pd.notna(prom_periodo) and pd.notna(prom_semana):
                                 diff = prom_semana - prom_periodo
                                 delta_str = f"{diff:+.2f}% vs. últ. semana"
@@ -825,7 +827,7 @@ with tab_autotrac:
                             )
             
                     # ------------------------------------------------------------------
-                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA (SOLO MÁQUINAS ACTIVAS EN AUTOPATH)
+                    # BLOQUE 3: TABLA DETALLE POR MÁQUINA
                     # ------------------------------------------------------------------
                     st.markdown("---")
                     st.subheader("📋 Detalle de AutoPath™ y Licencias por Máquina")
@@ -841,7 +843,6 @@ with tab_autotrac:
                         ap_periodo = df_ga.groupby(group_keys)["AutoPath™ Activo_clean"].mean().reset_index()
                         ap_periodo.rename(columns={"AutoPath™ Activo_clean": "AutoPath™ Activo"}, inplace=True)
             
-                        # FILTRO PARA LA TABLA: Solo mantener las máquinas con datos válidos
                         ap_periodo = ap_periodo[ap_periodo["AutoPath™ Activo"].notna()].copy()
             
                         if not ap_periodo.empty:
