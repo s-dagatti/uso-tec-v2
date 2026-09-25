@@ -239,9 +239,16 @@ with tab_autotrac:
         ].apply(lambda x: x if (pd.notna(x) and x >= 1) else None)
 
         max_fecha_analisis = df_filtrado_aptas["Fecha_fin_dt"].max()
-        df_filtrado_aptas.loc[:, "es_ult_semana"] = (
-            df_filtrado_aptas["Fecha_fin_dt"] == max_fecha_analisis
+        inicio_ult_semana = (
+            max_fecha_analisis - pd.Timedelta(days=7)
+            if pd.notna(max_fecha_analisis)
+            else None
         )
+
+        if inicio_ult_semana:
+            df_filtrado_aptas.loc[:, "es_ult_semana"] = (
+                df_filtrado_aptas["Fecha_fin_dt"] >= inicio_ult_semana
+            )
             df_ult_semana = (
                 df_filtrado_aptas[df_filtrado_aptas["es_ult_semana"]]
                 .groupby("Máquina")["AutoTrac_Filtrado"]
