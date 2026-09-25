@@ -189,8 +189,8 @@ with tab_autotrac:
     ]
     else:
         df_kpi_ult_semana = pd.DataFrame()
-            promedio_ult_semana_kpi = (
-                df_kpi_ult_semana["AutoTrac™ Activo"].mean()
+        promedio_ult_semana_kpi = (
+            df_kpi_ult_semana["AutoTrac™ Activo"].mean()
                 if not df_kpi_ult_semana.empty
                 else None
             )
