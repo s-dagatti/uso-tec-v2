@@ -740,7 +740,7 @@ with tab_autotrac:
                     medias_periodo_cols = [df_ga[c].mean() for c in cols_clean]
                     medias_periodo_cols_num = [m if pd.notna(m) else 0.0 for m in medias_periodo_cols]
                     
-                    prom_gen_periodo = sum(medias_periodo_cols_num) / len(cols_guiado_avanzado) if len(cols_guiado_avanzado) > 0 else None
+                    prom_gen_periodo = sum(medias_periodo_cols_num) / len(cols_presentes) if len(cols_guiado_avanzado) > 0 else None
             
                     if not df_ga_ult_semana.empty:
                         medias_semana_cols = [df_ga_ult_semana[c].mean() for c in cols_clean]
