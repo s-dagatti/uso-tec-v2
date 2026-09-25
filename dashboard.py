@@ -181,13 +181,13 @@ with tab_autotrac:
     df_filtrado_autotrac["Fecha_fin_dt"].max()
     if not df_filtrado_autotrac.empty
     else None
-)
+    )
 
-if pd.notna(max_fecha_kpi):
+    if pd.notna(max_fecha_kpi):
     df_kpi_ult_semana = df_filtrado_autotrac[
         df_filtrado_autotrac["Fecha_fin_dt"] == max_fecha_kpi
     ]
-else:
+    else:
     df_kpi_ult_semana = pd.DataFrame()
         promedio_ult_semana_kpi = (
             df_kpi_ult_semana["AutoTrac™ Activo"].mean()
