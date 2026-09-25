@@ -274,7 +274,7 @@ with tab_autotrac:
 
         df_ultimos_datos = (
             df_filtrado_aptas.sort_values("Fecha_fin_dt")
-            .groupby("Máquina")[cols_ultimos]
+            .groupby("Número de serie de la máquina")[cols_ultimos]
             .last()
             .reset_index()
         )
