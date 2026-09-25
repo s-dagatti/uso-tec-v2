@@ -1172,16 +1172,16 @@ with tab_autotrac:
                                 st.markdown("#### 📋 Detalle de Organizaciones")
                         
                                 def color_sync(row):
-                        
+
                                     uso = row["Machine Sync (%)"]
-                        
+                                
                                     if pd.isna(uso) or uso < 1:
                                         return [
-                                            "background-color: #ffe0e0"
+                                            "background-color: #7f1d1d; color: white;"
                                         ] * len(row)
-                        
+                                
                                     return [
-                                        "background-color: #e5ffe5"
+                                        "background-color: #14532d; color: white;"
                                     ] * len(row)
                         
                                 st.dataframe(
