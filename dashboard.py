@@ -295,7 +295,10 @@ with tab_autotrac:
         )
 
         df_promedios = pd.merge(
-            df_promedios, df_ultimos_datos, on="Máquina", how="left"
+            df_promedios,
+            df_ultimos_datos,
+            on="Número de serie de la máquina",
+            how="left"
         )
 
         df_promedios = pd.merge(
