@@ -1683,6 +1683,289 @@ with tab_autotrac:
                                     "ℹ️ No se encontraron organizaciones con combinaciones "
                                     "compatibles Tractor + Pulverizadora para AutoPath™."
                                 )
+
+                        # ==============================================================================
+                        # OPORTUNIDADES DE ADOPCIÓN - TURN AUTOMATION (ATTA)
+                        # ==============================================================================
+                        
+                        if tech_seleccionada_label == "Turn Automation":
+                        
+                            st.markdown("---")
+                            st.subheader("🚀 Oportunidades de Adopción - Turn Automation")
+                        
+                            st.caption(
+                                "Máquinas compatibles con Automatización de Maniobras "
+                                "(ATTA) que presentan menos de 1% de uso promedio "
+                                "durante el período analizado."
+                            )
+                        
+                            # ----------------------------------------------------------
+                            # MODELOS COMPATIBLES
+                            # ----------------------------------------------------------
+                        
+                            atta_models = [
+                                "S790",
+                                "S780",
+                                "S770",
+                                "S760",
+                                "S7 900",
+                                "S7 800",
+                                "S7 700",
+                                "S7 600",
+                                "7M 200",
+                                "7M 215",
+                                "7M 230",
+                                "8245R",
+                                "8250R",
+                                "8270R",
+                                "8295R",
+                                "8320R",
+                                "8335R",
+                                "8345R",
+                                "8370R",
+                                "8370RT",
+                                "8400R",
+                                "9R390",
+                                "9R 390"
+                            ]
+                        
+                            col_atta = "Automatización de maniobras AutoTrac™ Activo"
+                        
+                            df_atta_base = df_ga.copy()
+                        
+                            df_atta = df_atta_base[
+                                df_atta_base["Modelo"].isin(atta_models)
+                            ].copy()
+                        
+                            if (
+                                not df_atta.empty
+                                and
+                                col_atta in df_atta.columns
+                            ):
+                        
+                                # ------------------------------------------------------
+                                # PROMEDIO DE USO POR ORGANIZACIÓN + MODELO
+                                # ------------------------------------------------------
+                        
+                                df_atta_org = (
+                                    df_atta
+                                    .groupby(
+                                        [
+                                            "Organización",
+                                            "Modelo",
+                                            "Sucursal"
+                                        ]
+                                    )
+                                    .agg(
+                                        {
+                                            col_atta: "mean"
+                                        }
+                                    )
+                                    .reset_index()
+                                    .rename(
+                                        columns={
+                                            col_atta: "ATTA (%)"
+                                        }
+                                    )
+                                )
+                        
+                                # ------------------------------------------------------
+                                # KPIs
+                                # ------------------------------------------------------
+                        
+                                total_orgs = (
+                                    df_atta_org["Organización"]
+                                    .nunique()
+                                )
+                        
+                                total_maquinas = len(df_atta_org)
+                        
+                                orgs_con_uso = (
+                                    df_atta_org[
+                                        df_atta_org["ATTA (%)"].fillna(0) >= 1
+                                    ]["Organización"]
+                                    .nunique()
+                                )
+                        
+                                orgs_potenciales = (
+                                    df_atta_org[
+                                        df_atta_org["ATTA (%)"].fillna(0) < 1
+                                    ]["Organización"]
+                                    .nunique()
+                                )
+                        
+                                adopcion = (
+                                    (orgs_con_uso / total_orgs * 100)
+                                    if total_orgs > 0
+                                    else 0
+                                )
+                        
+                                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                        
+                                with kpi1:
+                                    st.metric(
+                                        "🏢 Organizaciones Compatibles",
+                                        total_orgs
+                                    )
+                        
+                                with kpi2:
+                                    st.metric(
+                                        "🚀 Potenciales ATTA",
+                                        orgs_potenciales
+                                    )
+                        
+                                with kpi3:
+                                    st.metric(
+                                        "✅ Adopción Actual",
+                                        f"{adopcion:.1f}%"
+                                    )
+                        
+                                with kpi4:
+                                    st.metric(
+                                        "🚜 Máquinas Compatibles",
+                                        total_maquinas
+                                    )
+                        
+                                # ------------------------------------------------------
+                                # TABLA
+                                # ------------------------------------------------------
+                        
+                                st.markdown("#### 📋 Detalle de Organizaciones")
+                        
+                                def color_atta(row):
+                        
+                                    uso = row["ATTA (%)"]
+                        
+                                    if pd.isna(uso) or uso < 1:
+                                        return [
+                                            "background-color: #7f1d1d; color: white;"
+                                        ] * len(row)
+                        
+                                    return [
+                                        "background-color: #14532d; color: white;"
+                                    ] * len(row)
+                        
+                                st.dataframe(
+                        
+                                    df_atta_org
+                                    .sort_values(
+                                        "ATTA (%)",
+                                        ascending=True,
+                                        na_position="first"
+                                    )
+                                    .style
+                                    .apply(
+                                        color_atta,
+                                        axis=1
+                                    )
+                                    .format(
+                                        {
+                                            "ATTA (%)": "{:.1f}%"
+                                        },
+                                        na_rep="0.0%"
+                                    ),
+                        
+                                    use_container_width=True
+                        
+                                )
+                        
+                                # ------------------------------------------------------
+                                # GRÁFICOS
+                                # ------------------------------------------------------
+                        
+                                col_b, col_p = st.columns(2)
+                        
+                                with col_b:
+                        
+                                    df_pot_atta = df_atta_org[
+                                        df_atta_org["ATTA (%)"]
+                                        .fillna(0) < 1
+                                    ]
+                        
+                                    if not df_pot_atta.empty:
+                        
+                                        df_chart_atta = (
+                                            df_pot_atta
+                                            .groupby("Sucursal")
+                                            ["Organización"]
+                                            .nunique()
+                                            .reset_index(
+                                                name="Cant. Organizaciones"
+                                            )
+                                        )
+                        
+                                        fig_bar_atta = px.bar(
+                        
+                                            df_chart_atta.sort_values(
+                                                "Cant. Organizaciones",
+                                                ascending=False
+                                            ),
+                        
+                                            x="Sucursal",
+                                            y="Cant. Organizaciones",
+                        
+                                            title="📍 Potenciales por Sucursal",
+                        
+                                            color="Sucursal",
+                        
+                                            text_auto=True
+                        
+                                        )
+                        
+                                        st.plotly_chart(
+                                            fig_bar_atta,
+                                            use_container_width=True
+                                        )
+                        
+                                with col_p:
+                        
+                                    df_pie_atta = (
+                                        df_atta_org
+                                        .drop_duplicates("Organización")
+                                        .copy()
+                                    )
+                        
+                                    df_pie_atta["Estado"] = np.where(
+                        
+                                        df_pie_atta["ATTA (%)"]
+                                        .fillna(0) >= 1,
+                        
+                                        "Con Uso",
+                        
+                                        "Potencial"
+                        
+                                    )
+                        
+                                    fig_pie_atta = px.pie(
+                        
+                                        df_pie_atta,
+                        
+                                        names="Estado",
+                        
+                                        hole=0.55,
+                        
+                                        title="🎯 Estado de Adopción",
+                        
+                                        color="Estado",
+                        
+                                        color_discrete_map={
+                                            "Con Uso": "#2ca02c",
+                                            "Potencial": "#d62728"
+                                        }
+                        
+                                    )
+                        
+                                    st.plotly_chart(
+                                        fig_pie_atta,
+                                        use_container_width=True
+                                    )
+                        
+                            else:
+                        
+                                st.info(
+                                    "ℹ️ No se encontraron máquinas compatibles "
+                                    "para Turn Automation en el período seleccionado."
+                                )
                         else:
                             st.info(f"ℹ️ No hay suficientes datos temporales para graficar la serie histórica de {tech_seleccionada_label}.")
                     else:
