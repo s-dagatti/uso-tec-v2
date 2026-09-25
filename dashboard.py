@@ -198,7 +198,7 @@ with tab_autotrac:
 
     if promedio_autotrac is not None and promedio_ult_semana_kpi is not None:
         delta_autotrac = promedio_ult_semana_kpi - promedio_autotrac
-        delta_str = f"{delta_autotrac:+.2f}% vs. últ. semana"
+        delta_str = f"{delta_autotrac:+.2f}% respecto al promedio del período"
     else:
         delta_str = None
 
@@ -279,7 +279,12 @@ with tab_autotrac:
             .reset_index()
         )
 
-        group_cols = ["Máquina", "Tipo", "Organización"]
+        group_cols = [
+            "Número de serie de la máquina",
+            "Máquina",
+            "Tipo",
+            "Organización"
+        ]
 
         df_promedios = df_filtrado_aptas.groupby(
             group_cols, dropna=False, as_index=False
