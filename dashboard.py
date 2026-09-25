@@ -1030,22 +1030,14 @@ with tab_autotrac:
                         
                             st.caption(
                                 "Organizaciones que poseen una combinación compatible de "
-                                "cosechadora + tractor, pero registran menos de 1% de uso de "
-                                "Machine Sync."
+                                "cosechadora + tractor y presentan menos de 1% de uso promedio "
+                                "de Machine Sync durante el período analizado."
                             )
-                        
-                            # ----------------------------------------------------------
-                            # ÚLTIMA FOTOGRAFÍA DISPONIBLE
-                            # ----------------------------------------------------------
-                            ultima_fecha = df_ga["Fecha_fin_dt"].max()
-                        
-                            df_aptas_latest = df_ga[
-                                df_ga["Fecha_fin_dt"] == ultima_fecha
-                            ].copy()
                         
                             # ----------------------------------------------------------
                             # MODELOS COMPATIBLES
                             # ----------------------------------------------------------
+                        
                             trac_ms_list = [
                                 "7M 200",
                                 "7M 215",
@@ -1064,63 +1056,88 @@ with tab_autotrac:
                                 "S7 900"
                             ]
                         
+                            col_sync = "John Deere Machine Sync Vehículo guía activo"
+                        
                             # ----------------------------------------------------------
-                            # FILTRO DE EQUIPOS COMPATIBLES
+                            # BASE COMPLETA DEL PERÍODO SELECCIONADO
                             # ----------------------------------------------------------
-                            df_ms_cos = df_aptas_latest[
-                                (df_aptas_latest["Tipo"] == "Cosechadora")
+                        
+                            df_ms_base = df_ga.copy()
+                        
+                            df_ms_cos = df_ms_base[
+                                (df_ms_base["Tipo"] == "Cosechadora")
                                 &
-                                (df_aptas_latest["Modelo"].isin(cos_models))
-                            ]
+                                (df_ms_base["Modelo"].isin(cos_models))
+                            ].copy()
                         
-                            df_ms_trac = df_aptas_latest[
-                                (df_aptas_latest["Tipo"] == "Tractor")
+                            df_ms_trac = df_ms_base[
+                                (df_ms_base["Tipo"] == "Tractor")
                                 &
-                                (df_aptas_latest["Modelo"].isin(trac_ms_list))
-                            ]
+                                (df_ms_base["Modelo"].isin(trac_ms_list))
+                            ].copy()
                         
-                            if not df_ms_cos.empty and not df_ms_trac.empty:
+                            if (
+                                not df_ms_cos.empty
+                                and
+                                not df_ms_trac.empty
+                                and
+                                col_sync in df_ms_cos.columns
+                            ):
                         
-                                col_sync = (
-                                    "John Deere Machine Sync Vehículo guía activo"
-                                )
+                                # ------------------------------------------------------
+                                # PROMEDIO DE USO POR ORGANIZACIÓN
+                                # ------------------------------------------------------
                         
-                                df_m_ms = pd.merge(
-                        
-                                    df_ms_cos[
-                                        [
-                                            "Organización",
-                                            "Modelo",
-                                            col_sync,
-                                            "Sucursal"
-                                        ]
-                                    ]
+                                df_sync_org = (
+                                    df_ms_cos
+                                    .groupby("Organización")
+                                    .agg(
+                                        {
+                                            col_sync: "mean",
+                                            "Sucursal": "last",
+                                            "Modelo": "first"
+                                        }
+                                    )
+                                    .reset_index()
                                     .rename(
                                         columns={
-                                            "Modelo": "Cosechadora",
-                                            col_sync: "Machine Sync (%)"
+                                            col_sync: "Machine Sync (%)",
+                                            "Modelo": "Cosechadora"
                                         }
-                                    ),
+                                    )
+                                )
                         
-                                    df_ms_trac[
-                                        [
-                                            "Organización",
-                                            "Modelo"
-                                        ]
-                                    ]
+                                df_trac_org = (
+                                    df_ms_trac
+                                    .groupby("Organización")
+                                    .agg(
+                                        {
+                                            "Modelo": "first"
+                                        }
+                                    )
+                                    .reset_index()
                                     .rename(
                                         columns={
                                             "Modelo": "Tractor"
                                         }
-                                    ),
-                        
-                                    on="Organización"
-                        
-                                ).drop_duplicates()
+                                    )
+                                )
                         
                                 # ------------------------------------------------------
-                                # KPI
+                                # MERGE
                                 # ------------------------------------------------------
+                        
+                                df_m_ms = pd.merge(
+                                    df_sync_org,
+                                    df_trac_org,
+                                    on="Organización",
+                                    how="inner"
+                                )
+                        
+                                # ------------------------------------------------------
+                                # KPIs
+                                # ------------------------------------------------------
+                        
                                 total_orgs = (
                                     df_m_ms["Organización"]
                                     .nunique()
@@ -1169,17 +1186,18 @@ with tab_autotrac:
                                 # ------------------------------------------------------
                                 # TABLA
                                 # ------------------------------------------------------
+                        
                                 st.markdown("#### 📋 Detalle de Organizaciones")
                         
                                 def color_sync(row):
-
+                        
                                     uso = row["Machine Sync (%)"]
-                                
+                        
                                     if pd.isna(uso) or uso < 1:
                                         return [
                                             "background-color: #7f1d1d; color: white;"
                                         ] * len(row)
-                                
+                        
                                     return [
                                         "background-color: #14532d; color: white;"
                                     ] * len(row)
@@ -1211,6 +1229,7 @@ with tab_autotrac:
                                 # ------------------------------------------------------
                                 # GRÁFICOS
                                 # ------------------------------------------------------
+                        
                                 col_b, col_p = st.columns(2)
                         
                                 with col_b:
@@ -1280,7 +1299,7 @@ with tab_autotrac:
                         
                                         names="Estado",
                         
-                                        hole=0.5,
+                                        hole=0.55,
                         
                                         title="🎯 Estado de Adopción",
                         
@@ -1301,9 +1320,8 @@ with tab_autotrac:
                             else:
                         
                                 st.info(
-                                    "ℹ️ No se encontraron organizaciones con "
-                                    "combinaciones compatibles Tractor + Cosechadora "
-                                    "para Machine Sync."
+                                    "ℹ️ No se encontraron organizaciones con combinaciones "
+                                    "compatibles Tractor + Cosechadora para Machine Sync."
                                 )
                         else:
                             st.info(f"ℹ️ No hay suficientes datos temporales para graficar la serie histórica de {tech_seleccionada_label}.")
