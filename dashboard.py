@@ -1018,6 +1018,293 @@ with tab_autotrac:
                             fig_hist.update_yaxes(title_text="% Uso Promedio", secondary_y=True, tickformat=".1f")
 
                             st.plotly_chart(fig_hist, use_container_width=True)
+
+                        # ==============================================================================
+                        # OPORTUNIDADES DE ADOPCIÓN - MACHINE SYNC
+                        # ==============================================================================
+                        
+                        if tech_seleccionada_label == "Machine Sync":
+                        
+                            st.markdown("---")
+                            st.subheader("🚀 Oportunidades de Adopción - Machine Sync")
+                        
+                            st.caption(
+                                "Organizaciones que poseen una combinación compatible de "
+                                "cosechadora + tractor, pero registran menos de 1% de uso de "
+                                "Machine Sync."
+                            )
+                        
+                            # ----------------------------------------------------------
+                            # ÚLTIMA FOTOGRAFÍA DISPONIBLE
+                            # ----------------------------------------------------------
+                            ultima_fecha = df_ga["Fecha_fin_dt"].max()
+                        
+                            df_aptas_latest = df_ga[
+                                df_ga["Fecha_fin_dt"] == ultima_fecha
+                            ].copy()
+                        
+                            # ----------------------------------------------------------
+                            # MODELOS COMPATIBLES
+                            # ----------------------------------------------------------
+                            trac_ms_list = [
+                                "7M 200",
+                                "7M 215",
+                                "7M 230",
+                                "7230R"
+                            ]
+                        
+                            cos_models = [
+                                "S760",
+                                "S770",
+                                "S780",
+                                "S790",
+                                "S7 600",
+                                "S7 700",
+                                "S7 800",
+                                "S7 900"
+                            ]
+                        
+                            # ----------------------------------------------------------
+                            # FILTRO DE EQUIPOS COMPATIBLES
+                            # ----------------------------------------------------------
+                            df_ms_cos = df_aptas_latest[
+                                (df_aptas_latest["Tipo"] == "Cosechadora")
+                                &
+                                (df_aptas_latest["Modelo"].isin(cos_models))
+                            ]
+                        
+                            df_ms_trac = df_aptas_latest[
+                                (df_aptas_latest["Tipo"] == "Tractor")
+                                &
+                                (df_aptas_latest["Modelo"].isin(trac_ms_list))
+                            ]
+                        
+                            if not df_ms_cos.empty and not df_ms_trac.empty:
+                        
+                                col_sync = (
+                                    "John Deere Machine Sync Vehículo guía activo"
+                                )
+                        
+                                df_m_ms = pd.merge(
+                        
+                                    df_ms_cos[
+                                        [
+                                            "Organización",
+                                            "Modelo",
+                                            col_sync,
+                                            "Sucursal"
+                                        ]
+                                    ]
+                                    .rename(
+                                        columns={
+                                            "Modelo": "Cosechadora",
+                                            col_sync: "Machine Sync (%)"
+                                        }
+                                    ),
+                        
+                                    df_ms_trac[
+                                        [
+                                            "Organización",
+                                            "Modelo"
+                                        ]
+                                    ]
+                                    .rename(
+                                        columns={
+                                            "Modelo": "Tractor"
+                                        }
+                                    ),
+                        
+                                    on="Organización"
+                        
+                                ).drop_duplicates()
+                        
+                                # ------------------------------------------------------
+                                # KPI
+                                # ------------------------------------------------------
+                                total_orgs = (
+                                    df_m_ms["Organización"]
+                                    .nunique()
+                                )
+                        
+                                orgs_con_uso = (
+                                    df_m_ms[
+                                        df_m_ms["Machine Sync (%)"].fillna(0) >= 1
+                                    ]["Organización"]
+                                    .nunique()
+                                )
+                        
+                                orgs_potenciales = (
+                                    df_m_ms[
+                                        df_m_ms["Machine Sync (%)"].fillna(0) < 1
+                                    ]["Organización"]
+                                    .nunique()
+                                )
+                        
+                                adopcion = (
+                                    (orgs_con_uso / total_orgs * 100)
+                                    if total_orgs > 0
+                                    else 0
+                                )
+                        
+                                kpi1, kpi2, kpi3 = st.columns(3)
+                        
+                                with kpi1:
+                                    st.metric(
+                                        "🏢 Organizaciones Compatibles",
+                                        total_orgs
+                                    )
+                        
+                                with kpi2:
+                                    st.metric(
+                                        "🚀 Potenciales",
+                                        orgs_potenciales
+                                    )
+                        
+                                with kpi3:
+                                    st.metric(
+                                        "✅ Adopción Actual",
+                                        f"{adopcion:.1f}%"
+                                    )
+                        
+                                # ------------------------------------------------------
+                                # TABLA
+                                # ------------------------------------------------------
+                                st.markdown("#### 📋 Detalle de Organizaciones")
+                        
+                                def color_sync(row):
+                        
+                                    uso = row["Machine Sync (%)"]
+                        
+                                    if pd.isna(uso) or uso < 1:
+                                        return [
+                                            "background-color: #ffe0e0"
+                                        ] * len(row)
+                        
+                                    return [
+                                        "background-color: #e5ffe5"
+                                    ] * len(row)
+                        
+                                st.dataframe(
+                        
+                                    df_m_ms
+                                    .sort_values(
+                                        "Machine Sync (%)",
+                                        ascending=True,
+                                        na_position="first"
+                                    )
+                                    .style
+                                    .apply(
+                                        color_sync,
+                                        axis=1
+                                    )
+                                    .format(
+                                        {
+                                            "Machine Sync (%)": "{:.1f}%"
+                                        },
+                                        na_rep="0.0%"
+                                    ),
+                        
+                                    use_container_width=True
+                        
+                                )
+                        
+                                # ------------------------------------------------------
+                                # GRÁFICOS
+                                # ------------------------------------------------------
+                                col_b, col_p = st.columns(2)
+                        
+                                with col_b:
+                        
+                                    df_pot_ms = df_m_ms[
+                                        df_m_ms["Machine Sync (%)"]
+                                        .fillna(0) < 1
+                                    ]
+                        
+                                    if not df_pot_ms.empty:
+                        
+                                        df_chart_ms = (
+                                            df_pot_ms
+                                            .groupby("Sucursal")
+                                            ["Organización"]
+                                            .nunique()
+                                            .reset_index(
+                                                name="Cant. Organizaciones"
+                                            )
+                                        )
+                        
+                                        fig_bar_ms = px.bar(
+                        
+                                            df_chart_ms.sort_values(
+                                                "Cant. Organizaciones",
+                                                ascending=False
+                                            ),
+                        
+                                            x="Sucursal",
+                                            y="Cant. Organizaciones",
+                        
+                                            title="📍 Potenciales por Sucursal",
+                        
+                                            color="Sucursal",
+                        
+                                            text_auto=True
+                        
+                                        )
+                        
+                                        st.plotly_chart(
+                                            fig_bar_ms,
+                                            use_container_width=True
+                                        )
+                        
+                                with col_p:
+                        
+                                    df_pie = (
+                                        df_m_ms
+                                        .drop_duplicates("Organización")
+                                        .copy()
+                                    )
+                        
+                                    df_pie["Estado"] = np.where(
+                        
+                                        df_pie["Machine Sync (%)"]
+                                        .fillna(0) >= 1,
+                        
+                                        "Con Uso",
+                        
+                                        "Potencial"
+                        
+                                    )
+                        
+                                    fig_pie_ms = px.pie(
+                        
+                                        df_pie,
+                        
+                                        names="Estado",
+                        
+                                        hole=0.5,
+                        
+                                        title="🎯 Estado de Adopción",
+                        
+                                        color="Estado",
+                        
+                                        color_discrete_map={
+                                            "Con Uso": "#2ca02c",
+                                            "Potencial": "#d62728"
+                                        }
+                        
+                                    )
+                        
+                                    st.plotly_chart(
+                                        fig_pie_ms,
+                                        use_container_width=True
+                                    )
+                        
+                            else:
+                        
+                                st.info(
+                                    "ℹ️ No se encontraron organizaciones con "
+                                    "combinaciones compatibles Tractor + Cosechadora "
+                                    "para Machine Sync."
+                                )
                         else:
                             st.info(f"ℹ️ No hay suficientes datos temporales para graficar la serie histórica de {tech_seleccionada_label}.")
                     else:
