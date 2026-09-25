@@ -1323,6 +1323,366 @@ with tab_autotrac:
                                     "ℹ️ No se encontraron organizaciones con combinaciones "
                                     "compatibles Tractor + Cosechadora para Machine Sync."
                                 )
+
+                        # ==============================================================================
+                        # OPORTUNIDADES DE ADOPCIÓN - AUTOPATH
+                        # ==============================================================================
+                        
+                        if (
+                            tech_seleccionada_label == "AutoPath™"
+                            or
+                            tech_seleccionada_label == "Implement Guidance"
+                        ):
+                        
+                            st.markdown("---")
+                        
+                            if tech_seleccionada_label == "Implement Guidance":
+                        
+                                st.subheader("🚀 Oportunidades de Adopción - Implement Guidance")
+                        
+                                st.info(
+                                    "Implement Guidance se encuentra asociado al uso de "
+                                    "AutoPath™. Por lo tanto las oportunidades mostradas "
+                                    "corresponden a potenciales usuarios de AutoPath™."
+                                )
+                        
+                            else:
+                        
+                                st.subheader("🚀 Oportunidades de Adopción - AutoPath™")
+                        
+                            st.caption(
+                                "Organizaciones que poseen una combinación compatible de "
+                                "tractor + pulverizadora y presentan menos de 1% de uso "
+                                "promedio de AutoPath™ durante el período analizado."
+                            )
+                        
+                            # ----------------------------------------------------------
+                            # MODELOS COMPATIBLES
+                            # ----------------------------------------------------------
+                        
+                            trac_ap_list = [
+                                "7M 200",
+                                "7M 215",
+                                "7M 230",
+                                "7200J",
+                                "7210J",
+                                "7215J",
+                                "7230J",
+                                "7230R",
+                                "8245R",
+                                "8250R",
+                                "8270R",
+                                "8295R",
+                                "8320R",
+                                "8335R",
+                                "8345R",
+                                "8370R",
+                                "8370RT",
+                                "8400R",
+                                "9420R",
+                                "9470R",
+                                "9520R",
+                                "9570R",
+                                "9R 390"
+                            ]
+                        
+                            pulv_models = [
+                                "M4025",
+                                "M4030",
+                                "M4040",
+                                "4730"
+                            ]
+                        
+                            col_ap = "AutoPath™ Activo"
+                        
+                            df_ap_base = df_ga.copy()
+                        
+                            df_ap_trac = df_ap_base[
+                                (df_ap_base["Tipo"] == "Tractor")
+                                &
+                                (df_ap_base["Modelo"].isin(trac_ap_list))
+                            ].copy()
+                        
+                            df_ap_pulv = df_ap_base[
+                                (df_ap_base["Tipo"] == "Pulverizadora")
+                                &
+                                (df_ap_base["Modelo"].isin(pulv_models))
+                            ].copy()
+                        
+                            if (
+                                not df_ap_trac.empty
+                                and
+                                not df_ap_pulv.empty
+                                and
+                                col_ap in df_ap_pulv.columns
+                            ):
+                        
+                                # ------------------------------------------------------
+                                # PROMEDIO DE USO POR ORGANIZACIÓN
+                                # ------------------------------------------------------
+                        
+                                df_ap_org = (
+                        
+                                    df_ap_pulv
+                        
+                                    .groupby("Organización")
+                        
+                                    .agg(
+                                        {
+                                            col_ap: "mean",
+                                            "Sucursal": "last",
+                                            "Modelo": "first"
+                                        }
+                                    )
+                        
+                                    .reset_index()
+                        
+                                    .rename(
+                                        columns={
+                                            col_ap: "AutoPath (%)",
+                                            "Modelo": "Pulverizadora"
+                                        }
+                                    )
+                        
+                                )
+                        
+                                df_trac_org = (
+                        
+                                    df_ap_trac
+                        
+                                    .groupby("Organización")
+                        
+                                    .agg(
+                                        {
+                                            "Modelo": "first"
+                                        }
+                                    )
+                        
+                                    .reset_index()
+                        
+                                    .rename(
+                                        columns={
+                                            "Modelo": "Tractor"
+                                        }
+                                    )
+                        
+                                )
+                        
+                                df_m_ap = pd.merge(
+                        
+                                    df_ap_org,
+                                    df_trac_org,
+                        
+                                    on="Organización",
+                        
+                                    how="inner"
+                        
+                                )
+                        
+                                # ------------------------------------------------------
+                                # KPI
+                                # ------------------------------------------------------
+                        
+                                total_orgs = (
+                                    df_m_ap["Organización"]
+                                    .nunique()
+                                )
+                        
+                                orgs_con_uso = (
+                                    df_m_ap[
+                                        df_m_ap["AutoPath (%)"].fillna(0) >= 1
+                                    ]["Organización"]
+                                    .nunique()
+                                )
+                        
+                                orgs_potenciales = (
+                                    df_m_ap[
+                                        df_m_ap["AutoPath (%)"].fillna(0) < 1
+                                    ]["Organización"]
+                                    .nunique()
+                                )
+                        
+                                adopcion = (
+                                    (orgs_con_uso / total_orgs * 100)
+                                    if total_orgs > 0
+                                    else 0
+                                )
+                        
+                                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                        
+                                with kpi1:
+                                    st.metric(
+                                        "🏢 Organizaciones Compatibles",
+                                        total_orgs
+                                    )
+                        
+                                with kpi2:
+                                    st.metric(
+                                        "🚀 Potenciales AutoPath",
+                                        orgs_potenciales
+                                    )
+                        
+                                with kpi3:
+                                    st.metric(
+                                        "✅ Adopción Actual",
+                                        f"{adopcion:.1f}%"
+                                    )
+                        
+                                with kpi4:
+                                    st.metric(
+                                        "🛰️ Potencial Implement Guidance",
+                                        orgs_potenciales
+                                    )
+                        
+                                # ------------------------------------------------------
+                                # TABLA
+                                # ------------------------------------------------------
+                        
+                                st.markdown("#### 📋 Detalle de Organizaciones")
+                        
+                                def color_ap(row):
+                        
+                                    uso = row["AutoPath (%)"]
+                        
+                                    if pd.isna(uso) or uso < 1:
+                                        return [
+                                            "background-color: #7f1d1d; color: white;"
+                                        ] * len(row)
+                        
+                                    return [
+                                        "background-color: #14532d; color: white;"
+                                    ] * len(row)
+                        
+                                st.dataframe(
+                        
+                                    df_m_ap
+                        
+                                    .sort_values(
+                                        "AutoPath (%)",
+                                        ascending=True,
+                                        na_position="first"
+                                    )
+                        
+                                    .style
+                        
+                                    .apply(
+                                        color_ap,
+                                        axis=1
+                                    )
+                        
+                                    .format(
+                                        {
+                                            "AutoPath (%)": "{:.1f}%"
+                                        },
+                                        na_rep="0.0%"
+                                    ),
+                        
+                                    use_container_width=True
+                        
+                                )
+                        
+                                # ------------------------------------------------------
+                                # GRÁFICOS
+                                # ------------------------------------------------------
+                        
+                                col_b, col_p = st.columns(2)
+                        
+                                with col_b:
+                        
+                                    df_pot_ap = df_m_ap[
+                                        df_m_ap["AutoPath (%)"]
+                                        .fillna(0) < 1
+                                    ]
+                        
+                                    if not df_pot_ap.empty:
+                        
+                                        df_chart_ap = (
+                        
+                                            df_pot_ap
+                        
+                                            .groupby("Sucursal")
+                                            ["Organización"]
+                        
+                                            .nunique()
+                        
+                                            .reset_index(
+                                                name="Cant. Organizaciones"
+                                            )
+                        
+                                        )
+                        
+                                        fig_bar_ap = px.bar(
+                        
+                                            df_chart_ap.sort_values(
+                                                "Cant. Organizaciones",
+                                                ascending=False
+                                            ),
+                        
+                                            x="Sucursal",
+                                            y="Cant. Organizaciones",
+                        
+                                            title="📍 Potenciales por Sucursal",
+                        
+                                            color="Sucursal",
+                        
+                                            text_auto=True
+                        
+                                        )
+                        
+                                        st.plotly_chart(
+                                            fig_bar_ap,
+                                            use_container_width=True
+                                        )
+                        
+                                with col_p:
+                        
+                                    df_pie_ap = (
+                                        df_m_ap
+                                        .drop_duplicates("Organización")
+                                        .copy()
+                                    )
+                        
+                                    df_pie_ap["Estado"] = np.where(
+                        
+                                        df_pie_ap["AutoPath (%)"]
+                                        .fillna(0) >= 1,
+                        
+                                        "Con Uso",
+                        
+                                        "Potencial"
+                        
+                                    )
+                        
+                                    fig_pie_ap = px.pie(
+                        
+                                        df_pie_ap,
+                        
+                                        names="Estado",
+                        
+                                        hole=0.55,
+                        
+                                        title="🎯 Estado de Adopción",
+                        
+                                        color="Estado",
+                        
+                                        color_discrete_map={
+                                            "Con Uso": "#2ca02c",
+                                            "Potencial": "#d62728"
+                                        }
+                        
+                                    )
+                        
+                                    st.plotly_chart(
+                                        fig_pie_ap,
+                                        use_container_width=True
+                                    )
+                        
+                            else:
+                        
+                                st.info(
+                                    "ℹ️ No se encontraron organizaciones con combinaciones "
+                                    "compatibles Tractor + Pulverizadora para AutoPath™."
+                                )
                         else:
                             st.info(f"ℹ️ No hay suficientes datos temporales para graficar la serie histórica de {tech_seleccionada_label}.")
                     else:
