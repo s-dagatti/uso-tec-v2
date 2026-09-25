@@ -173,27 +173,27 @@ with tab_autotrac:
     # --- CÁLCULO DE KPIS ---
     promedio_autotrac = (
         df_filtrado_autotrac["AutoTrac™ Activo"].mean()
-        if not df_filtrado_autotrac.empty
-        else None
+            if not df_filtrado_autotrac.empty
+            else None
     )
 
     max_fecha_kpi = (
-    df_filtrado_autotrac["Fecha_fin_dt"].max()
-    if not df_filtrado_autotrac.empty
-    else None
+        df_filtrado_autotrac["Fecha_fin_dt"].max()
+            if not df_filtrado_autotrac.empty
+            else None
     )
 
     if pd.notna(max_fecha_kpi):
-    df_kpi_ult_semana = df_filtrado_autotrac[
-        df_filtrado_autotrac["Fecha_fin_dt"] == max_fecha_kpi
+        df_kpi_ult_semana = df_filtrado_autotrac[
+            df_filtrado_autotrac["Fecha_fin_dt"] == max_fecha_kpi
     ]
     else:
-    df_kpi_ult_semana = pd.DataFrame()
-        promedio_ult_semana_kpi = (
-            df_kpi_ult_semana["AutoTrac™ Activo"].mean()
-            if not df_kpi_ult_semana.empty
-            else None
-        )
+        df_kpi_ult_semana = pd.DataFrame()
+            promedio_ult_semana_kpi = (
+                df_kpi_ult_semana["AutoTrac™ Activo"].mean()
+                if not df_kpi_ult_semana.empty
+                else None
+            )
     else:
         promedio_ult_semana_kpi = None
 
