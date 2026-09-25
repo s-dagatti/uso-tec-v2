@@ -957,11 +957,20 @@ with tab_autotrac:
 
                     col_fecha_agrup = "Fecha_fin_dt" if "Fecha_fin_dt" in df_ga.columns else ("Fecha" if "Fecha" in df_ga.columns else None)
                     
-                    if col_fecha_agrup and clean_col_sel in df_ga.columns:
-                        df_hist = df_ga.groupby(col_fecha_agrup).agg(
+                    df_activos_hist = df_ga[
+                        pd.notna(df_ga[clean_col_sel]) &
+                        (df_ga[clean_col_sel] > 0)
+                    ].copy()
+                    
+                    df_hist = (
+                        df_activos_hist
+                        .groupby(col_fecha_agrup)
+                        .agg(
                             Uso_Promedio=(clean_col_sel, "mean"),
-                            Maquinas_Activas=(col_sn, lambda x: df_ga.loc[x.index, clean_col_sel][df_ga.loc[x.index, clean_col_sel] > 0].nunique())
-                        ).reset_index()
+                            Maquinas_Activas=(col_sn, "nunique")
+                        )
+                        .reset_index()
+                    )
 
                         df_hist = df_hist.sort_values(col_fecha_agrup)
                         df_hist["Fecha_str"] = df_hist[col_fecha_agrup].dt.strftime("%Y-%m-%d")
