@@ -766,7 +766,10 @@ with tab_autotrac:
                         mask_semana = df_ga_ult_semana[cols_clean].notna().any(axis=1)
                         cant_maq_semana = df_ga_ult_semana.loc[mask_semana, col_sn].nunique()
                         diff_maq = cant_maq_semana - cant_maq_periodo
-                        delta_maq_str = f"{diff_maq:+d} máq. vs. últ. semana"
+                        delta_maq_str = (
+                            f"{cant_maq_semana:,}".replace(",", ".")
+                            + " en la última fotografía"
+                        )
                     else:
                         delta_maq_str = None
             
