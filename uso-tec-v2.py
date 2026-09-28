@@ -12,7 +12,6 @@ st.set_page_config(page_title="Centro de Control de Datos - Conci", layout="wide
 st.title("🚜 Centro de Control y Serie Histórica - Conci")
 st.markdown("Consolidación automática de datos de maquinaria, monitores, licencias y sucursales con persistencia en GitHub.")
 
-
 # --- DICCIONARIO DE MESES ---
 spanish_months = {
     'sept': 'Sep', 'septiembre': 'Sep',
@@ -84,16 +83,6 @@ def obtener_ultima_fecha(df):
         return max_d.strftime('%d/%m/%Y %H:%M')
     return "Sin datos"
 
-def obtener_df_ultima_actualizacion(df):
-    """Filtra el DataFrame para obtener únicamente los registros de la última fecha de actualización."""
-    if df is None or df.empty or 'Fecha de terminación' not in df.columns:
-        return df
-    dates = pd.to_datetime(df['Fecha de terminación'].astype(str), dayfirst=True, errors='coerce')
-    max_d = dates.max()
-    if pd.notna(max_d):
-        return df[dates == max_d]
-    return df
-
 # --- FUNCIONES DE GITHUB ---
 @st.cache_data(ttl=30, show_spinner=False)
 def cargar_base_github(repo, path, token):
@@ -141,14 +130,6 @@ def guardar_en_github(df, repo, path, token, commit_msg="Actualización de base 
         return False, f"Error al guardar en GitHub: {msg}"
 
 # --- 1. CARGA INICIAL DE LA BASE HISTÓRICA DESDE GITHUB ---
-tab_tecnologia, tab_cosecha = st.tabs([
-    "🚜 Uso de Tecnología",
-    "🌽 Automatización de Cosecha"
-])
-with tab_tecnologia:
-
-    # TODO el código actual
-
 df_historico = None
 try:
     gh_token = st.secrets["github"]["token"]
@@ -165,13 +146,10 @@ if df_historico is not None and not df_historico.empty:
     col_h1.metric("Registros Históricos", len(df_historico))
     col_h2.metric("Última Actualización", obtener_ultima_fecha(df_historico))
     
-    # Subconjunto filtrado para evaluar licencias solo de la última actualización
-    df_foto_actual = obtener_df_ultima_actualizacion(df_historico)
-    
-    if 'Estado Licencia' in df_foto_actual.columns:
-        col_h3.metric("🟢 Vigentes", (df_foto_actual['Estado Licencia'] == 'Vigente').sum())
-        col_h4.metric("🔴 Vencidas", (df_foto_actual['Estado Licencia'] == 'Vencida').sum())
-        col_h5.metric("⚪ Sin Licencia", (df_foto_actual['Estado Licencia'] == 'No tiene').sum())
+    if 'Estado Licencia' in df_historico.columns:
+        col_h3.metric("🟢 Vigentes", (df_historico['Estado Licencia'] == 'Vigente').sum())
+        col_h4.metric("🔴 Vencidas", (df_historico['Estado Licencia'] == 'Vencida').sum())
+        col_h5.metric("⚪ Sin Licencia", (df_historico['Estado Licencia'] == 'No tiene').sum())
 
     with st.expander("👁️ Ver base histórica guardada en GitHub", expanded=False):
         st.dataframe(df_historico, use_container_width=True)
