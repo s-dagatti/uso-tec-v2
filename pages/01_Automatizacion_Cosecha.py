@@ -1,5 +1,114 @@
 import streamlit as st
 import pandas as pd
+import requests
+import base64
+import io
+
+# ---------------------------------------------------
+# FUNCIONES GITHUB
+# ---------------------------------------------------
+
+@st.cache_data(ttl=30, show_spinner=False)
+def cargar_base_github(repo, path, token):
+
+    try:
+
+        url = f"https://api.github.com/repos/{repo}/contents/{path}"
+
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3.raw"
+        }
+
+        res = requests.get(
+            url,
+            headers=headers
+        )
+
+        if res.status_code == 200:
+
+            return pd.read_csv(
+                io.StringIO(res.text)
+            )
+
+        return None
+
+    except Exception:
+
+        return None
+
+
+def guardar_en_github(
+    df,
+    repo,
+    path,
+    token,
+    commit_msg
+):
+
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+
+    headers = {
+
+        "Authorization": f"token {token}",
+
+        "Accept": "application/vnd.github.v3+json"
+
+    }
+
+    csv_bytes = df.to_csv(
+        index=False
+    ).encode("utf-8")
+
+    content_b64 = base64.b64encode(
+        csv_bytes
+    ).decode("utf-8")
+
+    res_get = requests.get(
+        url,
+        headers=headers
+    )
+
+    sha = (
+        res_get.json().get("sha")
+        if res_get.status_code == 200
+        else None
+    )
+
+    payload = {
+
+        "message": commit_msg,
+
+        "content": content_b64
+
+    }
+
+    if sha:
+
+        payload["sha"] = sha
+
+    res_put = requests.put(
+        url,
+        headers=headers,
+        json=payload
+    )
+
+    if res_put.status_code in [200, 201]:
+
+        return (
+            True,
+            "Base histórica actualizada correctamente."
+        )
+
+    else:
+
+        return (
+            False,
+            res_put.json().get(
+                "message",
+                "Error inesperado"
+            )
+        )
 
 # ---------------------------------------------------
 # CONFIGURACIÓN
@@ -16,6 +125,73 @@ st.markdown(
     Construcción de la serie histórica de Automatización de Cosecha.
     """
 )
+
+# ---------------------------------------------------
+# CONFIG GITHUB
+# ---------------------------------------------------
+
+gh_token = st.secrets["github"]["token"]
+
+gh_repo = st.secrets["github"]["repo"]
+
+gh_path_cosecha = (
+    "datos_automatizacion_cosecha.csv"
+)
+
+# ---------------------------------------------------
+# HISTÓRICO
+# ---------------------------------------------------
+
+df_historico = cargar_base_github(
+
+    gh_repo,
+
+    gh_path_cosecha,
+
+    gh_token
+
+)
+
+st.subheader(
+    "📦 Estado de la Serie Histórica"
+)
+
+if (
+
+    df_historico is not None
+
+    and
+
+    not df_historico.empty
+
+):
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.metric(
+            "Registros Históricos",
+            len(df_historico)
+        )
+
+    with col2:
+
+        if "Número de serie" in df_historico.columns:
+
+            st.metric(
+                "Máquinas Únicas",
+                df_historico[
+                    "Número de serie"
+                ].nunique()
+            )
+
+else:
+
+    st.info(
+        "Todavía no existe "
+        "datos_automatizacion_cosecha.csv"
+    )
 
 # ---------------------------------------------------
 # CARGA DE ARCHIVOS
@@ -184,6 +360,11 @@ if uploaded_file is not None:
 
         df["Fecha de carga"] = pd.Timestamp.now()
 
+        df["Lote de Actualización"] = (
+            pd.Timestamp.now()
+            .strftime("%Y%m%d_%H%M")
+        )
+
         df["Semana Analizada"] = (
 
             pd.to_datetime(fecha_inicio)
@@ -199,6 +380,32 @@ if uploaded_file is not None:
             .strftime("%Y-%m-%d")
 
         )
+
+        # ---------------------------------------------------
+        # CONCATENAR HISTÓRICO
+        # ---------------------------------------------------
+        
+        if (
+        
+            df_historico is not None
+        
+            and
+        
+            not df_historico.empty
+        
+        ):
+        
+            df_final = pd.concat(
+                [df_historico, df],
+                ignore_index=True
+            )
+        
+            df_final = df_final.drop_duplicates()
+        
+        else:
+        
+            df_final = df.copy()
+
 
         # --------------------------------------------
         # MÉTRICAS
@@ -247,29 +454,66 @@ if uploaded_file is not None:
         st.subheader("👁️ Vista Previa")
 
         st.dataframe(
-            df,
+            df_final,
             use_container_width=True
         )
+
+        st.markdown("---")
+
+        st.subheader(
+            "📌 Guardar Serie Histórica"
+        )
+        
+        if st.button(
+        
+            "🚀 Actualizar Serie Histórica en GitHub",
+        
+            type="primary"
+        
+        ):
+        
+            with st.spinner(
+                "Guardando serie histórica..."
+            ):
+        
+                exito, mensaje = guardar_en_github(
+        
+                    df_final,
+        
+                    gh_repo,
+        
+                    gh_path_cosecha,
+        
+                    gh_token,
+        
+                    commit_msg=(
+                        "Actualización "
+                        "Automatización de Cosecha"
+                    )
+        
+                )
+        
+                if exito:
+        
+                    st.success(mensaje)
+        
+                    st.cache_data.clear()
+        
+                else:
+        
+                    st.error(mensaje)
+
 
         # --------------------------------------------
         # DESCARGA CSV
         # --------------------------------------------
 
-        csv = df.to_csv(
-            index=False
-        ).encode("utf-8")
-
-        st.download_button(
-
-            label="📥 Descargar CSV Procesado",
-
-            data=csv,
-
-            file_name="automatizacion_cosecha_procesado.csv",
-
-            mime="text/csv"
-
+        csv = (
+            df_final
+            .to_csv(index=False)
+            .encode("utf-8")
         )
+
 
     except Exception as e:
 
