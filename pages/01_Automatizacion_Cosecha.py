@@ -182,21 +182,20 @@ if (
 
     with col3:
 
-        if "Fecha de carga" in df_historico.columns:
+        if "Semana Analizada" in df_historico.columns:
+    
+            ultima_semana = (
+                df_historico["Semana Analizada"]
+                .dropna()
+                .astype(str)
+                .iloc[-1]
+            )
+    
+            st.metric(
+                "📅 Último Período",
+                ultima_semana
+            )
 
-            ultima_fecha = pd.to_datetime(
-                df_historico["Fecha de carga"],
-                errors="coerce"
-            ).max()
-
-            if pd.notna(ultima_fecha):
-
-                st.metric(
-                    "🕒 Última Actualización",
-                    ultima_fecha.strftime(
-                        "%d/%m/%Y %H:%M"
-                    )
-                )
 
 
 else:
