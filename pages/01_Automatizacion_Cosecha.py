@@ -157,21 +157,17 @@ st.subheader(
 )
 
 if (
-
     df_historico is not None
-
     and
-
     not df_historico.empty
-
 ):
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
 
         st.metric(
-            "Registros Históricos",
+            "📦 Registros Históricos",
             len(df_historico)
         )
 
@@ -180,11 +176,28 @@ if (
         if "Número de serie" in df_historico.columns:
 
             st.metric(
-                "Máquinas Únicas",
-                df_historico[
-                    "Número de serie"
-                ].nunique()
+                "🚜 Máquinas Únicas",
+                df_historico["Número de serie"].nunique()
             )
+
+    with col3:
+
+        if "Fecha de carga" in df_historico.columns:
+
+            ultima_fecha = pd.to_datetime(
+                df_historico["Fecha de carga"],
+                errors="coerce"
+            ).max()
+
+            if pd.notna(ultima_fecha):
+
+                st.metric(
+                    "🕒 Última Actualización",
+                    ultima_fecha.strftime(
+                        "%d/%m/%Y %H:%M"
+                    )
+                )
+
 
 else:
 
