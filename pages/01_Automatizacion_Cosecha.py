@@ -94,7 +94,7 @@ if uploaded_file is not None:
                 df_orgs = pd.read_csv(uploaded_file_orgs)
 
                 if (
-                    "Identificador de organización" in df.columns
+                    "Ident de organización" in df.columns
                     and
                     "Org ID" in df_orgs.columns
                 ):
@@ -117,8 +117,8 @@ if uploaded_file is not None:
 
                     )
 
-                    df["Identificador de organización"] = pd.to_numeric(
-                        df["Identificador de organización"],
+                    df["Ident de organización"] = pd.to_numeric(
+                        df["Ident de organización"],
                         errors="coerce"
                     )
 
@@ -133,7 +133,7 @@ if uploaded_file is not None:
 
                         df_orgs_unique,
 
-                        left_on="Identificador de organización",
+                        left_on="Ident de organización",
 
                         right_on="Org ID",
 
