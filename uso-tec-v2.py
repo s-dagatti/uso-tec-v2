@@ -12,6 +12,7 @@ st.set_page_config(page_title="Centro de Control de Datos - Conci", layout="wide
 st.title("🚜 Centro de Control y Serie Histórica - Conci")
 st.markdown("Consolidación automática de datos de maquinaria, monitores, licencias y sucursales con persistencia en GitHub.")
 
+
 # --- DICCIONARIO DE MESES ---
 spanish_months = {
     'sept': 'Sep', 'septiembre': 'Sep',
@@ -140,6 +141,14 @@ def guardar_en_github(df, repo, path, token, commit_msg="Actualización de base 
         return False, f"Error al guardar en GitHub: {msg}"
 
 # --- 1. CARGA INICIAL DE LA BASE HISTÓRICA DESDE GITHUB ---
+tab_tecnologia, tab_cosecha = st.tabs([
+    "🚜 Uso de Tecnología",
+    "🌽 Automatización de Cosecha"
+])
+with tab_tecnologia:
+
+    # TODO el código actual
+
 df_historico = None
 try:
     gh_token = st.secrets["github"]["token"]
