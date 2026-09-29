@@ -166,19 +166,54 @@ if (
 
     with col3:
 
-        fecha_max = pd.to_datetime(
-            df_historico["Fecha de terminación"],
-            errors="coerce"
-        ).max()
+    if (
+        "Fecha de inicio" in df_historico.columns
+        and
+        "Fecha de terminación" in df_historico.columns
+    ):
 
-        if pd.notna(fecha_max):
+        fechas_inicio = pd.to_datetime(
+            df_historico["Fecha de inicio"],
+            format="mixed",
+            errors="coerce"
+        )
+
+        fechas_fin = pd.to_datetime(
+            df_historico["Fecha de terminación"],
+            format="mixed",
+            errors="coerce"
+        )
+
+        ultima_fecha_fin = fechas_fin.max()
+
+        if pd.notna(ultima_fecha_fin):
+
+            mascara_ultimo_periodo = (
+                fechas_fin == ultima_fecha_fin
+            )
+
+            ultima_fecha_inicio = (
+                fechas_inicio[mascara_ultimo_periodo]
+                .min()
+            )
+
+            ultimo_periodo = (
+                f"{ultima_fecha_inicio.strftime('%d/%m/%Y')} - "
+                f"{ultima_fecha_fin.strftime('%d/%m/%Y')}"
+            )
 
             st.metric(
-                "Último Período",
-                fecha_max.strftime(
-                    "%d/%m/%Y"
-                )
+                "📅 Último Período",
+                ultimo_periodo
             )
+
+        else:
+
+            st.metric(
+                "📅 Último Período",
+                "Sin datos"
+            )
+
 
 else:
 
