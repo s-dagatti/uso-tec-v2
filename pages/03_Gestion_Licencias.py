@@ -498,7 +498,7 @@ if all([archivo_equipos, archivo_orgs, archivo_licencias, archivo_admin]):
         final = final.drop_duplicates(subset=claves_dedup, keep="last")
 
         st.subheader("👁️ Vista previa de la nueva foto")
-        
+
         tab_todas, tab_operations, tab_admin = st.tabs(
             [
                 "📋 Todas",
@@ -558,7 +558,9 @@ if all([archivo_equipos, archivo_orgs, archivo_licencias, archivo_admin]):
                 use_container_width=True,
                 hide_index=True
             )
+        
 
+        csv_final = final.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 Descargar histórico consolidado", data=csv_final, file_name=HISTORICO_PATH, mime="text/csv")
 
         if not repo or not token:
