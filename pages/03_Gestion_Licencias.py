@@ -30,13 +30,54 @@ def normalizar_orgid(serie):
 
 
 def leer_csv_robusto(archivo):
-    datos = archivo.getvalue() if hasattr(archivo, "getvalue") else archivo.read()
-    for encoding in ("utf-8-sig", "utf-8", "latin1"):
+
+    if hasattr(archivo, "getvalue"):
+        datos = archivo.getvalue()
+    else:
+        datos = archivo.read()
+
+    configuraciones = [
+        ("utf-8-sig", ","),
+        ("utf-8", ","),
+        ("cp1252", ","),
+        ("latin1", ","),
+        ("utf-8-sig", ";"),
+        ("cp1252", ";"),
+        ("latin1", ";"),
+        ("utf-8-sig", "\t"),
+        ("cp1252", "\t")
+    ]
+
+    for encoding, separador in configuraciones:
+
         try:
-            return pd.read_csv(io.BytesIO(datos), encoding=encoding, sep=None, engine="python", low_memory=False)
+
+            df = pd.read_csv(
+                io.BytesIO(datos),
+                encoding=encoding,
+                sep=separador,
+                engine="python"
+            )
+
+            # Evita aceptar un CSV mal leído
+            # que quedó en una sola columna
+            if len(df.columns) > 1:
+
+                df.columns = (
+                    df.columns
+                    .astype(str)
+                    .str.strip()
+                )
+
+                return df
+
         except Exception:
             continue
-    raise ValueError("No se pudo leer el CSV.")
+
+    raise ValueError(
+        "No se pudo leer el CSV."
+    )
+
 
 
 def exigir_columnas(df, requeridas, nombre):
