@@ -768,13 +768,21 @@ with tab_nuevo:
         clear_on_submit=False
     ):
 
-        usar_cliente_existente = st.checkbox(
-            "Asignar a un cliente existente",
-            value=True
+        modo_cliente = st.radio(
+            "Origen del cliente",
+            [
+                "Cliente existente",
+                "Cliente nuevo"
+            ],
+            horizontal=True
         )
 
+        # ====================================
+        # CLIENTE EXISTENTE
+        # ====================================
+
         if (
-            usar_cliente_existente
+            modo_cliente == "Cliente existente"
             and
             not clientes.empty
         ):
@@ -805,24 +813,53 @@ with tab_nuevo:
                 f"Sucursal asignada: {sucursal}"
             )
 
+        # ====================================
+        # CLIENTE NUEVO
+        # ====================================
+
         else:
 
             c1, c2, c3 = st.columns(3)
 
             with c1:
+
                 id_cliente = st.text_input(
                     "ID Cliente"
                 )
 
             with c2:
+
                 cliente = st.text_input(
                     "Cliente"
                 )
 
             with c3:
-                sucursal = st.text_input(
-                    "Sucursal"
+
+                sucursales_existentes = (
+                    opciones(
+                        df["SUCURSAL"]
+                    )
+                    + ["Nueva sucursal"]
                 )
+
+                sucursal_sel = st.selectbox(
+                    "Sucursal",
+                    sucursales_existentes
+                )
+
+                if sucursal_sel == "Nueva sucursal":
+
+                    sucursal = st.text_input(
+                        "Nombre de la sucursal"
+                    )
+
+                else:
+
+                    sucursal = sucursal_sel
+
+        # ====================================
+        # DATOS DEL AGRONOMY
+        # ====================================
 
         c1, c2 = st.columns(2)
 
@@ -863,6 +900,10 @@ with tab_nuevo:
             "🚀 Crear Agronomy",
             type="primary"
         )
+
+    # ====================================
+    # GUARDAR
+    # ====================================
 
     if guardar:
 
@@ -996,6 +1037,7 @@ with tab_nuevo:
                     actualizado,
                     f"Alta Agronomy: {cliente} - {nombre}"
                 )
+
 # =========================================================
 # TAB 3 — ELIMINAR AGRONOMYS
 # =========================================================
