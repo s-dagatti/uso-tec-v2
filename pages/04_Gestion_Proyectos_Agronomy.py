@@ -996,3 +996,152 @@ with tab_nuevo:
                     actualizado,
                     f"Alta Agronomy: {cliente} - {nombre}"
                 )
+# =========================================================
+# TAB 3 — ELIMINAR AGRONOMYS
+# =========================================================
+
+with tab_eliminar:
+
+    st.subheader(
+        "🗑️ Eliminar Agronomys"
+    )
+
+    st.warning(
+        "La eliminación modifica la base del repositorio. "
+        "Verificá cuidadosamente la selección antes de confirmar."
+    )
+
+    solo_sin_avance_eliminar = st.checkbox(
+        "Mostrar solamente proyectos sin avance",
+        value=True,
+        key="solo_sin_avance_eliminar"
+    )
+
+    candidatos = df.copy()
+
+    if solo_sin_avance_eliminar:
+
+        candidatos = candidatos[
+            es_sin_avance(candidatos)
+        ].copy()
+
+    candidatos = (
+        candidatos
+        .sort_values(
+            [
+                "SUCURSAL",
+                "CLIENTE",
+                "NOMBRE"
+            ]
+        )
+        .copy()
+    )
+
+    candidatos.insert(
+        0,
+        "Eliminar",
+        False
+    )
+
+    columnas_editor = [
+        "Eliminar",
+        "CLIENTE",
+        "SUCURSAL",
+        "Tipo de Proyecto",
+        "NOMBRE",
+        "Q PLANTEADO",
+        "FY",
+        "Clave Proyecto"
+    ]
+
+    editado = st.data_editor(
+
+        candidatos[
+            columnas_editor
+        ],
+
+        use_container_width=True,
+
+        hide_index=True,
+
+        disabled=[
+            c
+            for c in columnas_editor
+            if c != "Eliminar"
+        ],
+
+        column_config={
+            "Eliminar":
+                st.column_config.CheckboxColumn(
+                    "Eliminar",
+                    help=(
+                        "Marcá los proyectos "
+                        "que querés eliminar."
+                    )
+                ),
+
+            "Clave Proyecto":
+                None
+        },
+
+        key="editor_eliminar_agronomy"
+
+    )
+
+    claves_eliminar = (
+
+        editado.loc[
+            editado["Eliminar"]
+            .fillna(False),
+
+            "Clave Proyecto"
+        ]
+
+        .astype(str)
+
+        .tolist()
+
+    )
+
+    st.caption(
+        f"Proyectos seleccionados: "
+        f"{len(claves_eliminar)}"
+    )
+
+    confirmar = st.checkbox(
+        "Confirmo que deseo eliminar definitivamente "
+        "los proyectos seleccionados",
+        value=False
+    )
+
+    if st.button(
+        "🗑️ Eliminar seleccionados",
+        type="primary",
+        disabled=(
+            not claves_eliminar
+            or not confirmar
+        )
+    ):
+
+        actualizado = (
+
+            df[
+                ~df["Clave Proyecto"]
+                .astype(str)
+                .isin(claves_eliminar)
+            ]
+
+            .copy()
+
+        )
+
+        guardar_y_refrescar(
+
+            actualizado,
+
+            (
+                f"Eliminación de "
+                f"{len(claves_eliminar)} Agronomys"
+            )
+
+        )
