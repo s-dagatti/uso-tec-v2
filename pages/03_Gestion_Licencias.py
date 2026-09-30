@@ -405,7 +405,63 @@ if all([archivo_equipos, archivo_orgs, archivo_licencias, archivo_admin]):
         final = final.drop_duplicates(subset=claves_dedup, keep="last")
 
         st.subheader("👁️ Vista previa de la nueva foto")
-        st.dataframe(foto.head(500), use_container_width=True, hide_index=True)
+
+        tab_todas, tab_operations, tab_admin = st.tabs([
+            "📋 Todas",
+            "🛰️ Operations Center",
+            "🗂️ Control Administrativo"
+        ])
+        
+        with tab_todas:
+        
+            st.caption(
+                f"{len(foto):,} registros"
+            )
+        
+            st.dataframe(
+                foto,
+                use_container_width=True,
+                hide_index=True
+            )
+        
+        with tab_operations:
+        
+            df_operations = (
+                foto[
+                    foto["Fuente"]
+                    == "Operations Center"
+                ]
+            )
+        
+            st.caption(
+                f"{len(df_operations):,} registros"
+            )
+        
+            st.dataframe(
+                df_operations,
+                use_container_width=True,
+                hide_index=True
+            )
+        
+        with tab_admin:
+        
+            df_admin_preview = (
+                foto[
+                    foto["Fuente"]
+                    == "Control administrativo"
+                ]
+            )
+        
+            st.caption(
+                f"{len(df_admin_preview):,} registros"
+            )
+        
+            st.dataframe(
+                df_admin_preview,
+                use_container_width=True,
+                hide_index=True
+            )
+        h=True, hide_index=True)
 
         csv_final = final.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 Descargar histórico consolidado", data=csv_final, file_name=HISTORICO_PATH, mime="text/csv")
