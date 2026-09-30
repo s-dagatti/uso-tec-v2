@@ -734,132 +734,60 @@ with tab_nuevo:
         "desde el dashboard principal."
     )
 
-    clientes = (
-        df[
-            [
-                "ID CLIENTE",
-                "CLIENTE",
-                "SUCURSAL"
-            ]
-        ]
-        .dropna(subset=["CLIENTE"])
-        .drop_duplicates()
-        .sort_values(
-            [
-                "CLIENTE",
-                "SUCURSAL"
-            ]
-        )
-    )
-
-    clientes["Etiqueta"] = clientes.apply(
-
-        lambda fila:
-        f"{texto_limpio(fila['CLIENTE'])} · "
-        f"{texto_limpio(fila['SUCURSAL'])} · "
-        f"ID {normalizar_numero(fila['ID CLIENTE'])}",
-
-        axis=1
-
-    )
-
     with st.form(
         "form_nuevo_agronomy",
         clear_on_submit=False
     ):
 
-        modo_cliente = st.radio(
-            "Origen del cliente",
-            [
-                "Cliente existente",
-                "Cliente nuevo"
-            ],
-            horizontal=True
-        )
-
         # ====================================
-        # CLIENTE EXISTENTE
+        # CLIENTE
         # ====================================
 
-        if (
-            modo_cliente == "Cliente existente"
-            and
-            not clientes.empty
-        ):
+        st.markdown("### Cliente")
 
-            etiqueta_cliente = st.selectbox(
-                "Cliente",
-                clientes["Etiqueta"].tolist()
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+
+            id_cliente = st.text_input(
+                "ID Cliente"
             )
 
-            fila_cliente = clientes[
-                clientes["Etiqueta"]
-                .eq(etiqueta_cliente)
-            ].iloc[0]
+        with c2:
 
-            id_cliente = normalizar_numero(
-                fila_cliente["ID CLIENTE"]
+            cliente = st.text_input(
+                "Cliente"
             )
 
-            cliente = texto_limpio(
-                fila_cliente["CLIENTE"]
+        with c3:
+
+            sucursales_existentes = (
+                opciones(
+                    df["SUCURSAL"]
+                )
+                + ["Nueva sucursal"]
             )
 
-            sucursal = texto_limpio(
-                fila_cliente["SUCURSAL"]
+            sucursal_sel = st.selectbox(
+                "Sucursal",
+                sucursales_existentes
             )
 
-            st.caption(
-                f"Sucursal asignada: {sucursal}"
-            )
+            if sucursal_sel == "Nueva sucursal":
 
-        # ====================================
-        # CLIENTE NUEVO
-        # ====================================
-
-        else:
-
-            c1, c2, c3 = st.columns(3)
-
-            with c1:
-
-                id_cliente = st.text_input(
-                    "ID Cliente"
+                sucursal = st.text_input(
+                    "Nombre de la nueva sucursal"
                 )
 
-            with c2:
+            else:
 
-                cliente = st.text_input(
-                    "Cliente"
-                )
-
-            with c3:
-
-                sucursales_existentes = (
-                    opciones(
-                        df["SUCURSAL"]
-                    )
-                    + ["Nueva sucursal"]
-                )
-
-                sucursal_sel = st.selectbox(
-                    "Sucursal",
-                    sucursales_existentes
-                )
-
-                if sucursal_sel == "Nueva sucursal":
-
-                    sucursal = st.text_input(
-                        "Nombre de la sucursal"
-                    )
-
-                else:
-
-                    sucursal = sucursal_sel
+                sucursal = sucursal_sel
 
         # ====================================
-        # DATOS DEL AGRONOMY
+        # DATOS DEL PROYECTO
         # ====================================
+
+        st.markdown("### Proyecto")
 
         c1, c2 = st.columns(2)
 
@@ -1037,6 +965,7 @@ with tab_nuevo:
                     actualizado,
                     f"Alta Agronomy: {cliente} - {nombre}"
                 )
+
 
 # =========================================================
 # TAB 3 — ELIMINAR AGRONOMYS
