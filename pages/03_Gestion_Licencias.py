@@ -13,20 +13,58 @@ st.title("🔑 Constructor de la Base Histórica de Licencias")
 st.caption("Consolida equipos, emparejamientos, licencias Operations Center y control administrativo en una foto por fecha de actualización.")
 
 HISTORICO_PATH = "datos_licencias_clientes.csv"
-COMPONENTES_VALIDOS = ["Monitor", "Receptores de posición"]
-ADMIN_VALIDOS = ["Monitor Gen 4", "Antena 6000"]
+
+COMPONENTES_VALIDOS = [
+    "Monitor",
+    "Receptores de posición"
+]
+
+ADMIN_VALIDOS = [
+    "Monitor Gen 4",
+    "Antena 6000"
+]
 
 
 def limpiar_texto(serie):
-    return serie.astype("string").str.strip().replace({"---": pd.NA, "": pd.NA, "nan": pd.NA})
+    return (
+        serie
+        .astype("string")
+        .str.strip()
+        .replace(
+            {
+                "---": pd.NA,
+                "": pd.NA,
+                "nan": pd.NA
+            }
+        )
+    )
 
 
 def normalizar_serie(serie):
-    return (limpiar_texto(serie).str.upper().str.replace(r"[^A-Z0-9]", "", regex=True).replace("", pd.NA))
+
+    return (
+        limpiar_texto(serie)
+        .str.upper()
+        .str.replace(
+            r"[^A-Z0-9]",
+            "",
+            regex=True
+        )
+        .replace("", pd.NA)
+    )
 
 
 def normalizar_orgid(serie):
-    return pd.to_numeric(serie, errors="coerce").astype("Int64").astype("string").replace("<NA>", pd.NA)
+
+    return (
+        pd.to_numeric(
+            serie,
+            errors="coerce"
+        )
+        .astype("Int64")
+        .astype("string")
+        .replace("<NA>", pd.NA)
+    )
 
 
 def leer_csv_robusto(archivo):
@@ -45,7 +83,7 @@ def leer_csv_robusto(archivo):
         ("cp1252", ";"),
         ("latin1", ";"),
         ("utf-8-sig", "\t"),
-        ("cp1252", "\t")
+        ("cp1252", "\t"),
     ]
 
     for encoding, separador in configuraciones:
@@ -59,8 +97,8 @@ def leer_csv_robusto(archivo):
                 engine="python"
             )
 
-            # Evita aceptar un CSV mal leído
-            # que quedó en una sola columna
+            # Evita aceptar una lectura mala
+            # donde todo quedó en una sola columna
             if len(df.columns) > 1:
 
                 df.columns = (
@@ -79,38 +117,93 @@ def leer_csv_robusto(archivo):
     )
 
 
-
 def exigir_columnas(df, requeridas, nombre):
-    faltantes = [c for c in requeridas if c not in df.columns]
+
+    faltantes = [
+        c
+        for c in requeridas
+        if c not in df.columns
+    ]
+
     if faltantes:
-        raise ValueError(f"{nombre}: faltan columnas: {', '.join(faltantes)}")
+
+        raise ValueError(
+            f"{nombre}: faltan columnas: {', '.join(faltantes)}"
+        )
 
 
 def fecha_mixta(serie):
+
     try:
-        return pd.to_datetime(serie, format="mixed", dayfirst=True, errors="coerce")
+
+        return pd.to_datetime(
+            serie,
+            format="mixed",
+            dayfirst=True,
+            errors="coerce"
+        )
+
     except TypeError:
-        return pd.to_datetime(serie, dayfirst=True, errors="coerce")
+
+        return pd.to_datetime(
+            serie,
+            dayfirst=True,
+            errors="coerce"
+        )
 
 
 def cargar_config_github():
+
     try:
-        return st.secrets["github"]["repo"], st.secrets["github"]["token"]
+
+        return (
+            st.secrets["github"]["repo"],
+            st.secrets["github"]["token"]
+        )
+
     except Exception:
-        return None, None
+
+        return (
+            None,
+            None
+        )
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(
+    ttl=60,
+    show_spinner=False
+)
 def cargar_historico(repo, path, token):
+
     if not repo or not token:
         return pd.DataFrame()
-    url = f"https://api.github.com/repos/{repo}/contents/{path}"
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.raw+json"}
-    respuesta = requests.get(url, headers=headers, timeout=30)
+
+    url = (
+        f"https://api.github.com/repos/"
+        f"{repo}/contents/{path}"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.raw+json"
+    }
+
+    respuesta = requests.get(
+        url,
+        headers=headers,
+        timeout=30
+    )
+
     if respuesta.status_code == 404:
         return pd.DataFrame()
+
     respuesta.raise_for_status()
-    return pd.read_csv(io.StringIO(respuesta.text), low_memory=False)
+
+    return pd.read_csv(
+        io.StringIO(respuesta.text),
+        low_memory=False
+    )
+
 
 
 def guardar_github(df, repo, path, token, mensaje):
