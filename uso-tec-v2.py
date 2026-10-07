@@ -48,7 +48,27 @@ def procesar_analizador(df):
     cols_to_drop = [c for c in df.columns if 'unidad' in str(c).lower()]
     df = df.drop(columns=cols_to_drop)
     
-    cols_porcentuales = [c for c in df.columns if 'activo' in str(c).lower() or 'activado' in str(c).lower()]
+    cols_porcentuales = [
+        c
+        for c in df.columns
+        if
+            'activo' in str(c).lower()
+            or
+            'activado' in str(c).lower()
+            or
+            'efficiency manager' in str(c).lower()
+            or
+            'fieldcruise' in str(c).lower()
+    ]
+    
+    for col in cols_porcentuales:
+        df[col] = pd.to_numeric(
+            df[col]
+            .astype(str)
+            .str.replace('%', ''),
+            errors='coerce'
+        )
+
     for col in cols_porcentuales:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace('%', ''), errors='coerce')
         
@@ -280,6 +300,38 @@ if uploaded_file_analizador is not None:
         nuevas_vigentes = (df_nuevo['Estado Licencia'] == 'Vigente').sum()
         nuevas_vencidas = (df_nuevo['Estado Licencia'] == 'Vencida').sum()
         nuevas_no_tiene = (df_nuevo['Estado Licencia'] == 'No tiene').sum()
+
+        # -------------------------------------------------
+        # NUEVAS TECNOLOGÍAS
+        # -------------------------------------------------
+        
+        columnas_nuevas = [
+        
+            "Tiempo de activación de Efficiency Manager™ Automático",
+        
+            "FieldCruise™ Activado"
+        
+        ]
+        
+        for col in columnas_nuevas:
+        
+            if df_historico is not None and col not in df_historico.columns:
+        
+                df_historico[col] = np.nan
+        
+            if col not in df_nuevo.columns:
+        
+                df_nuevo[col] = np.nan
+
+        st.write(
+            df_nuevo[
+                [
+                    "Tiempo de activación de Efficiency Manager™ Automático",
+                    "FieldCruise™ Activado"
+                ]
+            ]
+            .describe()
+        )
 
         # G. CONCATENACIÓN CON BASE HISTÓRICA
         if df_historico is not None and not df_historico.empty:
