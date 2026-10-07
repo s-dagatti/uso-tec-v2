@@ -52,4 +52,4 @@ FECHA Y HORA,ID CLIENTE,CLIENTE,SUCURSAL,CATEGORÍA DE EVALUACIÓN,Tipo de Proye
 ,385734,COLETTA,Pilar,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Pilar,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
 ,450652,PAGAN HNOS,Pilar,Granos,AutoPath,Autopath,Pilar,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q3,,,27,0.0
 ,410201,AGROPECUARIA LAS MARÍAS SA,Sinsacate,Granos,Sembradora JD,DB40,Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
-2026-09-30 19:30:17,224851,Suyai ,Prueba,Prueba,Prueba,Prueba,Prueba,Completado,1.5,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,1.5
+2026-09-30 19:30:17,224851,Suyai ,Prueba,Prueba,Prueba,Prueba,Prueba,Completado,1.5,Completado,0.5,Completado,0.5,Q1,12354,www.hola.com,27,1.5
