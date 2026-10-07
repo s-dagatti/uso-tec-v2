@@ -1,4 +1,4 @@
-FECHA Y HORA,ID CLIENTE,CLIENTE,SUCURSAL,CATEGORÍA DE EVALUACIÓN,Tipo de Proyecto,NOMBRE,Ubicación,Planificación - Estado,Planificación - Horas,Recopilación de Datos - Estado,Recopilación de Datos - Horas,Generación de informe - Estado,Generación de informe - Horas,Q PLANTEADO,ID PRUEBA,LINK ACCESO,FY,Horas Totales
+﻿FECHA Y HORA,ID CLIENTE,CLIENTE,SUCURSAL,CATEGORÍA DE EVALUACIÓN,Tipo de Proyecto,NOMBRE,Ubicación,Planificación - Estado,Planificación - Horas,Recopilación de Datos - Estado,Recopilación de Datos - Horas,Generación de informe - Estado,Generación de informe - Horas,Q PLANTEADO,ID PRUEBA,LINK ACCESO,FY,Horas Totales
 2025-12-22 09:32:33,425653,ADJ SRL,Sinsacate,Granos,Cosechadora - S7,Ag. Demo - S7 Automation,SmartFarm 2026,Completado,0.5,Completado,8.0,Completado,0.5,Q2,17762.0,https://agronomyanalyzer.deere.com/trials/4111/locations/17762/reports/ac41f0d0-e894-4623-b9b9-c73e85925cfd,26,9.0
 2025-12-22 12:34:25,324409,De Giorgio SA,Sinsacate,Granos,Cosechadora - S7,Ag. Demo - S7 Automation,SmartFarm 2026,Completado,2.0,Completado,6.0,Completado,1.0,Q2,18265.0,https://agronomyanalyzer.deere.com/trials/4111/locations/18265/reports/05477011-b93d-4885-a519-f370854b8f15,26,9.0
 2025-12-22 13:39:56,408834,DEFRANCISCO BUTELER MARCELO,Sinsacate,Granos,Grain Sensing,S7 - Grain Sensing,SmartFarm 2026,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
@@ -52,4 +52,3 @@ FECHA Y HORA,ID CLIENTE,CLIENTE,SUCURSAL,CATEGORÍA DE EVALUACIÓN,Tipo de Proye
 ,385734,COLETTA,Pilar,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Pilar,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
 ,450652,PAGAN HNOS,Pilar,Granos,AutoPath,Autopath,Pilar,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q3,,,27,0.0
 ,410201,AGROPECUARIA LAS MARÍAS SA,Sinsacate,Granos,Sembradora JD,DB40,Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
-2026-09-30 19:30:17,224851,Suyai ,Prueba,Prueba,Prueba,Prueba,Prueba,Completado,1.5,Completado,0.5,Completado,0.5,Q1,12354,www.hola.com,27,1.5
