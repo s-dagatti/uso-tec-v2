@@ -52,80 +52,9 @@ except Exception as e:
     st.error(f"❌ Error al conectar con la base de datos en GitHub (`s-dagatti/uso-tec-v2`): {e}")
     st.stop()
 
-# ---------------------------------------------------
-# CONVERSIÓN ROBUSTA DE FECHAS
-# ---------------------------------------------------
-
-def convertir_fecha(serie):
-
-    fecha_limpia = (
-        serie
-        .astype("string")
-        .str.strip()
-        .str.replace(",", "", regex=False)
-        .str.replace("a.m.", "AM", regex=False)
-        .str.replace("p.m.", "PM", regex=False)
-    )
-
-    resultado = pd.Series(
-        pd.NaT,
-        index=serie.index,
-        dtype="datetime64[ns]"
-    )
-
-    # Filas que contienen AM o PM
-    tiene_am_pm = fecha_limpia.str.contains(
-        r"(AM|PM)$",
-        regex=True,
-        na=False
-    )
-
-    # Formato de la nueva semana:
-    # 14/10/2026 12:00:00 AM
-    resultado.loc[tiene_am_pm] = pd.to_datetime(
-        fecha_limpia.loc[tiene_am_pm],
-        format="%d/%m/%Y %I:%M:%S %p",
-        errors="coerce"
-    )
-
-    # Formato de las semanas anteriores:
-    # 07/10/2026 12:00:00
-    resultado.loc[~tiene_am_pm] = pd.to_datetime(
-        fecha_limpia.loc[~tiene_am_pm],
-        format="%d/%m/%Y %H:%M:%S",
-        errors="coerce"
-    )
-
-    return resultado
-
-st.write(
-    "Fecha máxima de inicio:",
-    df_raw["Fecha_inicio_dt"].max()
-)
-
-st.write(
-    "Fecha máxima de finalización:",
-    df_raw["Fecha_fin_dt"].max()
-)
-
-st.write(
-    "Fechas de inicio no interpretadas:",
-    df_raw["Fecha_inicio_dt"].isna().sum()
-)
-
-st.write(
-    "Fechas de finalización no interpretadas:",
-    df_raw["Fecha_fin_dt"].isna().sum()
-)
-
-
-df_raw["Fecha_inicio_dt"] = convertir_fecha(
-    df_raw["Fecha de inicio"]
-)
-
-df_raw["Fecha_fin_dt"] = convertir_fecha(
-    df_raw["Fecha de terminación"]
-)
+# Conversión de fechas y tipos numéricos
+df_raw['Fecha_inicio_dt'] = pd.to_datetime(df_raw['Fecha de inicio'], dayfirst=True, errors='coerce')
+df_raw['Fecha_fin_dt'] = pd.to_datetime(df_raw['Fecha de terminación'], dayfirst=True, errors='coerce')
 
 if 'AutoTrac™ Activo' in df_raw.columns:
     df_raw['AutoTrac™ Activo'] = pd.to_numeric(df_raw['AutoTrac™ Activo'], errors='coerce')
