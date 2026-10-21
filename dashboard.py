@@ -98,6 +98,26 @@ def convertir_fecha(serie):
 
     return resultado
 
+st.write(
+    "Fecha máxima de inicio:",
+    df_raw["Fecha_inicio_dt"].max()
+)
+
+st.write(
+    "Fecha máxima de finalización:",
+    df_raw["Fecha_fin_dt"].max()
+)
+
+st.write(
+    "Fechas de inicio no interpretadas:",
+    df_raw["Fecha_inicio_dt"].isna().sum()
+)
+
+st.write(
+    "Fechas de finalización no interpretadas:",
+    df_raw["Fecha_fin_dt"].isna().sum()
+)
+
 
 df_raw["Fecha_inicio_dt"] = convertir_fecha(
     df_raw["Fecha de inicio"]
