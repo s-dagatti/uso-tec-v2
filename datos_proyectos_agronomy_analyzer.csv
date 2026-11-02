@@ -1,4 +1,4 @@
-﻿FECHA Y HORA,ID CLIENTE,CLIENTE,SUCURSAL,CATEGORÍA DE EVALUACIÓN,Tipo de Proyecto,NOMBRE,Ubicación,Planificación - Estado,Planificación - Horas,Recopilación de Datos - Estado,Recopilación de Datos - Horas,Generación de informe - Estado,Generación de informe - Horas,Q PLANTEADO,ID PRUEBA,LINK ACCESO,FY,Horas Totales
+FECHA Y HORA,ID CLIENTE,CLIENTE,SUCURSAL,CATEGORÍA DE EVALUACIÓN,Tipo de Proyecto,NOMBRE,Ubicación,Planificación - Estado,Planificación - Horas,Recopilación de Datos - Estado,Recopilación de Datos - Horas,Generación de informe - Estado,Generación de informe - Horas,Q PLANTEADO,ID PRUEBA,LINK ACCESO,FY,Horas Totales
 2025-12-22 09:32:33,425653,ADJ SRL,Sinsacate,Granos,Cosechadora - S7,Ag. Demo - S7 Automation,SmartFarm 2026,Completado,0.5,Completado,8.0,Completado,0.5,Q2,17762.0,https://agronomyanalyzer.deere.com/trials/4111/locations/17762/reports/ac41f0d0-e894-4623-b9b9-c73e85925cfd,26,9.0
 2025-12-22 12:34:25,324409,De Giorgio SA,Sinsacate,Granos,Cosechadora - S7,Ag. Demo - S7 Automation,SmartFarm 2026,Completado,2.0,Completado,6.0,Completado,1.0,Q2,18265.0,https://agronomyanalyzer.deere.com/trials/4111/locations/18265/reports/05477011-b93d-4885-a519-f370854b8f15,26,9.0
 2025-12-22 13:39:56,408834,DEFRANCISCO BUTELER MARCELO,Sinsacate,Granos,Grain Sensing,S7 - Grain Sensing,SmartFarm 2026,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
@@ -39,7 +39,7 @@
 2026-06-11 11:13:00,2671521,ZAMORA EDGAR EDUARDO,Sinsacate,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
 2026-06-11 11:13:00,444715,MARINOZZI LUCAS MARTIN,Córdoba,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
 2026-06-11 11:13:00,443951,LAHERS SA,Córdoba,Ganadería,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
-2026-06-11 11:13:00,308408,H&H OUTFITTERS SA,Córdoba,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
+2026-06-11 11:13:00,308408,H&H OUTFITTERS SA,Córdoba,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,Completado,1.0,En Proceso,0.0,No Iniciado,0.0,Q1,nan,nan,27,0.0
 2026-06-11 11:13:00,2754901,LOS ALGARROBOSGRANDES SRL,Arroyito,Ganadería,Rotoenfardadora,Rotoenfardadora,Arroyito,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q2,,,27,0.0
 2026-06-11 11:13:00,573387,EL PRADO SA,Arroyito,Ganadería,Picadora 8000,HarvestLab 3000,Arroyito,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
 2026-06-11 11:13:00,2754901,LOS ALGARROBOSGRANDES SRL,Arroyito,Ganadería,Guiado Avanzado,Guiado Avanzado,Arroyito,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
