@@ -39,7 +39,7 @@ FECHA Y HORA,ID CLIENTE,CLIENTE,SUCURSAL,CATEGORÍA DE EVALUACIÓN,Tipo de Proye
 2026-06-11 11:13:00,2671521,ZAMORA EDGAR EDUARDO,Sinsacate,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
 2026-06-11 11:13:00,444715,MARINOZZI LUCAS MARTIN,Córdoba,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
 2026-06-11 11:13:00,443951,LAHERS SA,Córdoba,Ganadería,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
-2026-06-11 11:13:00,308408,H&H OUTFITTERS SA,Córdoba,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,Completado,1.0,En Proceso,0.0,No Iniciado,0.0,Q1,nan,nan,27,0.0
+2026-06-11 11:13:00,308408,H&H OUTFITTERS SA,Córdoba,Granos,Cosechadora - S7,Ag. Demo - S7 Automation (trigo),Sinsacate,Completado,1.0,Completado,10.0,Completado,2.0,Q1,20483,https://agronomyanalyzer.deere.com/trials/4111/locations/20483/reports/4f1668c7-214c-445e-9087-cca10af08011,27,1.0
 2026-06-11 11:13:00,2754901,LOS ALGARROBOSGRANDES SRL,Arroyito,Ganadería,Rotoenfardadora,Rotoenfardadora,Arroyito,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q2,,,27,0.0
 2026-06-11 11:13:00,573387,EL PRADO SA,Arroyito,Ganadería,Picadora 8000,HarvestLab 3000,Arroyito,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
 2026-06-11 11:13:00,2754901,LOS ALGARROBOSGRANDES SRL,Arroyito,Ganadería,Guiado Avanzado,Guiado Avanzado,Arroyito,No Iniciado,0.0,No Iniciado,0.0,No Iniciado,0.0,Q1,,,27,0.0
